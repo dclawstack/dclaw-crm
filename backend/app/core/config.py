@@ -19,6 +19,15 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     access_token_expire_minutes: int = 60
 
+    clearbit_api_key: str = ""
+
+    # Deal health score weights
+    health_activity_recent_points: int = 25
+    health_probability_ok_points: int = 20
+    health_stuck_stage_penalty: int = 15
+    health_close_date_set_points: int = 10
+    health_close_date_overdue_penalty: int = 20
+
 
 @lru_cache()
 def get_settings() -> Settings:

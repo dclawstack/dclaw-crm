@@ -5,24 +5,23 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { listCustomers, createCustomer, type CustomerCreate } from "@/lib/api";
+import ImportModal from "@/components/ImportModal";
+import { listCustomers, createCustomer, importCustomers, exportCustomers, type CustomerCreate } from "@/lib/api";
+
+const STATUSES = ["lead", "prospect", "active", "inactive", "churned"];
+
+function statusBadge(status: string) {
+  if (status === "active") return "bg-[#E6F4EC] text-[#2E8B57]";
+  if (status === "lead" || status === "prospect") return "bg-[#F1EEF8] text-[#7660A8]";
+  return "bg-[#F2F2F4] text-[#7A7A85]";
+}
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Awaited<ReturnType<typeof listCustomers>> | null>(null);
@@ -33,14 +32,12 @@ export default function CustomersPage() {
 
   const load = async () => {
     setLoading(true);
-    const data = await listCustomers(100, 0);
+    const data = await listCustomers(200, 0);
     setCustomers(data);
     setLoading(false);
   };
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   const handleCreate = async () => {
     await createCustomer(form);
@@ -51,94 +48,74 @@ export default function CustomersPage() {
 
   const filtered = customers?.items.filter((c) => {
     const q = search.toLowerCase();
-    return (
-      c.name.toLowerCase().includes(q) ||
-      c.email.toLowerCase().includes(q) ||
-      (c.company ?? "").toLowerCase().includes(q)
-    );
+    return c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || (c.company ?? "").toLowerCase().includes(q);
   });
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Customers</h1>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger>
-            <Button>Add Customer</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>New Customer</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div>
-                <Label>Name</Label>
-                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold text-[#0F0F12]">Customers</h1>
+        <div className="flex items-center gap-2">
+          <ImportModal
+            label="Customers"
+            onImport={importCustomers}
+            onExport={exportCustomers}
+            exportFilename="customers.csv"
+          />
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger>
+              <Button className="rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]">Add Customer</Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-2xl">
+              <DialogHeader><DialogTitle>New Customer</DialogTitle></DialogHeader>
+              <div className="space-y-3">
+                <div><Label>Name</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="rounded-xl border-[#E8E8EC]" /></div>
+                <div><Label>Email</Label><Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="rounded-xl border-[#E8E8EC]" /></div>
+                <div><Label>Phone</Label><Input value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="rounded-xl border-[#E8E8EC]" /></div>
+                <div><Label>Company</Label><Input value={form.company ?? ""} onChange={(e) => setForm({ ...form, company: e.target.value })} className="rounded-xl border-[#E8E8EC]" /></div>
+                <Button onClick={handleCreate} disabled={!form.name || !form.email} className="rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]">
+                  Save
+                </Button>
               </div>
-              <div>
-                <Label>Email</Label>
-                <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-              </div>
-              <div>
-                <Label>Phone</Label>
-                <Input value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-              </div>
-              <div>
-                <Label>Company</Label>
-                <Input value={form.company ?? ""} onChange={(e) => setForm({ ...form, company: e.target.value })} />
-              </div>
-              <Button onClick={handleCreate} disabled={!form.name || !form.email}>
-                Save
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Input
-        placeholder="Search customers..."
+        placeholder="Search by name, email, company…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="max-w-sm"
+        className="max-w-sm rounded-xl border-[#E8E8EC] focus:border-[#C9C0DE]"
       />
 
-      <Card>
+      <Card className="rounded-2xl border-[#E8E8EC] shadow-sm">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Status</TableHead>
+              <TableRow className="border-b border-[#E8E8EC]">
+                <TableHead className="text-xs uppercase tracking-wide text-[#7A7A85]">Name</TableHead>
+                <TableHead className="text-xs uppercase tracking-wide text-[#7A7A85]">Email</TableHead>
+                <TableHead className="text-xs uppercase tracking-wide text-[#7A7A85]">Company</TableHead>
+                <TableHead className="text-xs uppercase tracking-wide text-[#7A7A85]">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-slate-500">
-                    Loading...
-                  </TableCell>
-                </TableRow>
+                <TableRow><TableCell colSpan={4} className="text-center text-[#7A7A85]">Loading…</TableCell></TableRow>
               )}
               {!loading && filtered?.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-slate-500">
-                    No customers found.
-                  </TableCell>
-                </TableRow>
+                <TableRow><TableCell colSpan={4} className="text-center text-[#7A7A85]">No customers found.</TableCell></TableRow>
               )}
               {filtered?.map((c) => (
-                <TableRow key={c.id}>
+                <TableRow key={c.id} className="border-b border-[#E8E8EC] hover:bg-[#F8F8FA]">
                   <TableCell>
-                    <Link href={`/customers/${c.id}`} className="font-medium hover:underline">
-                      {c.name}
-                    </Link>
+                    <Link href={`/customers/${c.id}`} className="font-medium text-[#7660A8] hover:underline">{c.name}</Link>
                   </TableCell>
-                  <TableCell>{c.email}</TableCell>
-                  <TableCell>{c.company ?? "—"}</TableCell>
+                  <TableCell className="text-[#404049]">{c.email}</TableCell>
+                  <TableCell className="text-[#404049]">{c.company ?? "—"}</TableCell>
                   <TableCell>
-                    <Badge variant={c.status === "active" ? "default" : "secondary"}>{c.status}</Badge>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(c.status)}`}>{c.status}</span>
                   </TableCell>
                 </TableRow>
               ))}

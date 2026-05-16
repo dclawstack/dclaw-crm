@@ -13,7 +13,7 @@ class Activity(Base):
         ForeignKey("customers.id", ondelete="CASCADE"), nullable=False
     )
     activity_type: Mapped[str] = mapped_column(
-        Enum("call", "email", "meeting", "note", name="activity_type"),
+        Enum("call", "email", "meeting", "note", "stage_change", "status_change", "enrichment", name="activity_type"),
         nullable=False,
     )
     description: Mapped[str] = mapped_column(Text, nullable=False)

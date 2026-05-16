@@ -1,6 +1,8 @@
+from datetime import date, datetime, timezone
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.database import get_db
 from app.repositories.activity_repo import ActivityRepository
@@ -8,6 +10,38 @@ from app.schemas.activity import ActivityCreate, ActivityUpdate, ActivityRespons
 from app.models.activity import Activity
 
 router = APIRouter()
+
+
+@router.get("/due-today", response_model=ActivityListResponse)
+async def due_today(db: AsyncSession = Depends(get_db)):
+    today = date.today()
+    result = await db.execute(
+        select(Activity).where(
+            Activity.completed.is_(False),
+            Activity.scheduled_at.isnot(None),
+        )
+    )
+    items = [
+        a for a in result.scalars().all()
+        if a.scheduled_at and a.scheduled_at.date() == today
+    ]
+    return ActivityListResponse(items=items, total=len(items))
+
+
+@router.get("/overdue", response_model=ActivityListResponse)
+async def overdue(db: AsyncSession = Depends(get_db)):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    result = await db.execute(
+        select(Activity).where(
+            Activity.completed.is_(False),
+            Activity.scheduled_at.isnot(None),
+            Activity.scheduled_at < now,
+        )
+    )
+    items = list(result.scalars().all())
+    today = date.today()
+    items = [a for a in items if a.scheduled_at and a.scheduled_at.date() < today]
+    return ActivityListResponse(items=items, total=len(items))
 
 
 @router.get("/", response_model=ActivityListResponse)
@@ -20,13 +54,9 @@ async def list_activities(
 ):
     repo = ActivityRepository(db)
     if customer_id:
-        items, total = await repo.list_by_customer(
-            customer_id=customer_id, limit=limit, offset=offset
-        )
+        items, total = await repo.list_by_customer(customer_id=customer_id, limit=limit, offset=offset)
     elif deal_id:
-        items, total = await repo.list_by_deal(
-            deal_id=deal_id, limit=limit, offset=offset
-        )
+        items, total = await repo.list_by_deal(deal_id=deal_id, limit=limit, offset=offset)
     else:
         items, total = await repo.list_all(limit=limit, offset=offset)
     return ActivityListResponse(items=items, total=total)
@@ -80,3 +110,16 @@ async def delete_activity(
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
     await repo.delete(activity)
+
+
+@router.patch("/{activity_id}/complete", response_model=ActivityResponse)
+async def toggle_complete(
+    activity_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    repo = ActivityRepository(db)
+    activity = await repo.get_by_id(activity_id)
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    updated = await repo.update(activity, completed=not activity.completed)
+    return updated
