@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+import sys
 
 
 class Settings(BaseSettings):
@@ -19,6 +20,9 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     access_token_expire_minutes: int = 60
 
+    # Comma-separated allowed CORS origins; defaults include local dev ports
+    allowed_origins: str = "http://localhost:3006,http://localhost:3000"
+
     clearbit_api_key: str = ""
 
     # Deal health score weights
@@ -28,10 +32,18 @@ class Settings(BaseSettings):
     health_close_date_set_points: int = 10
     health_close_date_overdue_penalty: int = 20
 
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+
 
 @lru_cache()
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    if s.app_env != "dev" and s.secret_key == "change-me-in-production":
+        print("FATAL: SECRET_KEY must be set in production.", file=sys.stderr)
+        sys.exit(1)
+    return s
 
 
 settings = get_settings()

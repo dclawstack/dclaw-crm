@@ -1,9 +1,12 @@
+import { getToken } from "@/lib/auth";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = `${API_BASE}${path}`;
-  const response = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
+  const token = getToken();
+  const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { "Content-Type": "application/json", ...authHeader, ...options?.headers },
     ...options,
   });
   if (!response.ok) {
@@ -11,6 +14,14 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(`API error ${response.status}: ${error}`);
   }
   return response.json();
+}
+
+function authedFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const token = getToken();
+  return fetch(url, {
+    ...init,
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init.headers },
+  });
 }
 
 export async function getHealth() {
@@ -95,8 +106,7 @@ export async function updateCustomer(id: string, data: CustomerUpdate) {
 }
 
 export async function deleteCustomer(id: string) {
-  const url = `${API_BASE}/api/v1/customers/${id}`;
-  return fetch(url, { method: "DELETE" });
+  return authedFetch(`${API_BASE}/api/v1/customers/${id}`, { method: "DELETE" });
 }
 
 export async function updateCustomerStatus(id: string, status: string) {
@@ -108,15 +118,13 @@ export async function enrichCustomer(id: string) {
 }
 
 export async function exportCustomers() {
-  const url = `${API_BASE}/api/v1/customers/export`;
-  return fetch(url);
+  return authedFetch(`${API_BASE}/api/v1/customers/export`);
 }
 
 export async function importCustomers(file: File) {
   const formData = new FormData();
   formData.append("file", file);
-  const url = `${API_BASE}/api/v1/customers/import`;
-  const resp = await fetch(url, { method: "POST", body: formData });
+  const resp = await authedFetch(`${API_BASE}/api/v1/customers/import`, { method: "POST", body: formData });
   if (!resp.ok) throw new Error(`Import error ${resp.status}`);
   return resp.json() as Promise<{ imported: number; skipped: number; errors: string[] }>;
 }
@@ -168,8 +176,7 @@ export async function updateDeal(id: string, data: DealUpdate) {
 }
 
 export async function deleteDeal(id: string) {
-  const url = `${API_BASE}/api/v1/deals/${id}`;
-  return fetch(url, { method: "DELETE" });
+  return authedFetch(`${API_BASE}/api/v1/deals/${id}`, { method: "DELETE" });
 }
 
 export async function moveDealStage(id: string, stage: string) {
@@ -183,15 +190,13 @@ export async function getDealHealth(id: string) {
 }
 
 export async function exportDeals() {
-  const url = `${API_BASE}/api/v1/deals/export`;
-  return fetch(url);
+  return authedFetch(`${API_BASE}/api/v1/deals/export`);
 }
 
 export async function importDeals(file: File) {
   const formData = new FormData();
   formData.append("file", file);
-  const url = `${API_BASE}/api/v1/deals/import`;
-  const resp = await fetch(url, { method: "POST", body: formData });
+  const resp = await authedFetch(`${API_BASE}/api/v1/deals/import`, { method: "POST", body: formData });
   if (!resp.ok) throw new Error(`Import error ${resp.status}`);
   return resp.json() as Promise<{ imported: number; skipped: number; errors: string[] }>;
 }
@@ -244,8 +249,7 @@ export async function updateActivity(id: string, data: ActivityUpdate) {
 }
 
 export async function deleteActivity(id: string) {
-  const url = `${API_BASE}/api/v1/activities/${id}`;
-  return fetch(url, { method: "DELETE" });
+  return authedFetch(`${API_BASE}/api/v1/activities/${id}`, { method: "DELETE" });
 }
 
 export async function toggleActivityComplete(id: string) {
@@ -286,8 +290,7 @@ export async function updateNote(id: string, content: string) {
 }
 
 export async function deleteNote(id: string) {
-  const url = `${API_BASE}/api/v1/notes/${id}`;
-  return fetch(url, { method: "DELETE" });
+  return authedFetch(`${API_BASE}/api/v1/notes/${id}`, { method: "DELETE" });
 }
 
 // ── Contacts ──────────────────────────────────────────────────────────────────
@@ -320,8 +323,7 @@ export async function updateContact(id: string, data: Partial<ContactCreate>) {
 }
 
 export async function deleteContact(id: string) {
-  const url = `${API_BASE}/api/v1/contacts/${id}`;
-  return fetch(url, { method: "DELETE" });
+  return authedFetch(`${API_BASE}/api/v1/contacts/${id}`, { method: "DELETE" });
 }
 
 // ── Audit Log ─────────────────────────────────────────────────────────────────
@@ -362,8 +364,7 @@ export async function createWebhook(data: { url: string; events: string[]; secre
 }
 
 export async function deleteWebhook(id: string) {
-  const url = `${API_BASE}/api/v1/webhooks/${id}`;
-  return fetch(url, { method: "DELETE" });
+  return authedFetch(`${API_BASE}/api/v1/webhooks/${id}`, { method: "DELETE" });
 }
 
 export async function getWebhookDeliveries(id: string) {

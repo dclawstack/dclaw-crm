@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.auth import get_current_user, require_role
 from app.repositories.webhook_repo import WebhookEndpointRepository, WebhookDeliveryRepository
 from app.schemas.webhook import (
     WebhookEndpointCreate,
@@ -40,7 +41,7 @@ async def list_webhooks(
 
 
 @router.post("/", response_model=WebhookEndpointResponse, status_code=201)
-async def create_webhook(data: WebhookEndpointCreate, db: AsyncSession = Depends(get_db)):
+async def create_webhook(data: WebhookEndpointCreate, db: AsyncSession = Depends(get_db), _: object = Depends(require_role("admin"))):
     repo = WebhookEndpointRepository(db)
     endpoint = WebhookEndpoint(
         url=data.url,
@@ -53,7 +54,7 @@ async def create_webhook(data: WebhookEndpointCreate, db: AsyncSession = Depends
 
 
 @router.delete("/{webhook_id}", status_code=204)
-async def delete_webhook(webhook_id: UUID, db: AsyncSession = Depends(get_db)):
+async def delete_webhook(webhook_id: UUID, db: AsyncSession = Depends(get_db), _: object = Depends(require_role("admin"))):
     repo = WebhookEndpointRepository(db)
     endpoint = await repo.get_by_id(webhook_id)
     if not endpoint:

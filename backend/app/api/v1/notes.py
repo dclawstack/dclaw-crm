@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.auth import get_current_user, require_role
 from app.repositories.note_repo import NoteRepository
 from app.schemas.note import NoteCreate, NoteUpdate, NoteResponse, NoteListResponse
 from app.models.note import Note
@@ -29,7 +30,7 @@ async def list_notes(
 
 
 @router.post("/", response_model=NoteResponse, status_code=201)
-async def create_note(data: NoteCreate, db: AsyncSession = Depends(get_db)):
+async def create_note(data: NoteCreate, db: AsyncSession = Depends(get_db), _: object = Depends(get_current_user)):
     repo = NoteRepository(db)
     note = Note(content=data.content, customer_id=data.customer_id, deal_id=data.deal_id)
     return await repo.create(note)
@@ -45,7 +46,7 @@ async def get_note(note_id: UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{note_id}", response_model=NoteResponse)
-async def update_note(note_id: UUID, data: NoteUpdate, db: AsyncSession = Depends(get_db)):
+async def update_note(note_id: UUID, data: NoteUpdate, db: AsyncSession = Depends(get_db), _: object = Depends(get_current_user)):
     repo = NoteRepository(db)
     note = await repo.get_by_id(note_id)
     if not note:
@@ -55,7 +56,7 @@ async def update_note(note_id: UUID, data: NoteUpdate, db: AsyncSession = Depend
 
 
 @router.delete("/{note_id}", status_code=204)
-async def delete_note(note_id: UUID, db: AsyncSession = Depends(get_db)):
+async def delete_note(note_id: UUID, db: AsyncSession = Depends(get_db), _: object = Depends(require_role("admin"))):
     repo = NoteRepository(db)
     note = await repo.get_by_id(note_id)
     if not note:

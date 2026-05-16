@@ -34,18 +34,6 @@ async def get_dashboard(
     lost_q = select(func.count()).select_from(Deal).where(Deal.stage == "closed_lost")
 
     if from_date:
-        for q in [open_deals_count_q, pipeline_q, won_q, lost_q]:
-            q = q.where(Deal.created_at >= from_date)
-    if to_date:
-        for q in [open_deals_count_q, pipeline_q, won_q, lost_q]:
-            q = q.where(Deal.created_at <= to_date)
-
-    open_deals_count_q = select(func.count()).select_from(Deal).where(Deal.stage.in_(open_stages))
-    pipeline_q = select(func.sum(Deal.value)).select_from(Deal).where(Deal.stage.in_(open_stages))
-    won_q = select(func.count()).select_from(Deal).where(Deal.stage == "closed_won")
-    lost_q = select(func.count()).select_from(Deal).where(Deal.stage == "closed_lost")
-
-    if from_date:
         open_deals_count_q = open_deals_count_q.where(Deal.created_at >= from_date)
         pipeline_q = pipeline_q.where(Deal.created_at >= from_date)
         won_q = won_q.where(Deal.created_at >= from_date)

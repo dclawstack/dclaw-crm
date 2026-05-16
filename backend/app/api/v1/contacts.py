@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.auth import get_current_user, require_role
 from app.repositories.contact_repo import ContactRepository
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse, ContactListResponse
 from app.models.contact import Contact
@@ -27,6 +28,7 @@ async def create_contact(
     customer_id: UUID,
     data: ContactCreate,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = ContactRepository(db)
     contact = Contact(
@@ -49,6 +51,7 @@ async def update_contact(
     contact_id: UUID,
     data: ContactUpdate,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = ContactRepository(db)
     contact = await repo.get_by_id(contact_id)
@@ -63,7 +66,7 @@ async def update_contact(
 
 
 @router.delete("/contacts/{contact_id}", status_code=204)
-async def delete_contact(contact_id: UUID, db: AsyncSession = Depends(get_db)):
+async def delete_contact(contact_id: UUID, db: AsyncSession = Depends(get_db), _: object = Depends(require_role("admin"))):
     repo = ContactRepository(db)
     contact = await repo.get_by_id(contact_id)
     if not contact:

@@ -167,15 +167,15 @@ export default function ActivitiesPage() {
       </div>
 
       <div className="space-y-3">
-        {loading && <p className="text-slate-500">Loading...</p>}
-        {!loading && filtered?.length === 0 && <p className="text-slate-500">No activities found.</p>}
+        {loading && <p className="text-[#7A7A85]">Loading...</p>}
+        {!loading && filtered?.length === 0 && <p className="text-[#7A7A85]">No activities found.</p>}
         {filtered?.map((a) => (
           <Card key={a.id}>
             <CardContent className="flex items-start gap-3 py-4">
               <Badge variant="outline">{a.activity_type}</Badge>
               <div className="flex-1">
                 <p className="text-sm">{a.description}</p>
-                <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                <div className="mt-1 flex items-center gap-2 text-xs text-[#7A7A85]">
                   <span>
                     Customer:{" "}
                     <Link href={`/customers/${a.customer_id}`} className="hover:underline">

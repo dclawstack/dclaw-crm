@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.auth import get_current_user, require_role
 from app.repositories.customer_repo import CustomerRepository
 from app.repositories.activity_repo import ActivityRepository
 from app.repositories.audit_log_repo import AuditLogRepository
@@ -34,6 +35,7 @@ async def list_customers(
 async def create_customer(
     data: CustomerCreate,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = CustomerRepository(db)
     existing = await repo.get_by_email(data.email)
@@ -67,6 +69,7 @@ async def export_customers(db: AsyncSession = Depends(get_db)):
 async def import_customers(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = CustomerRepository(db)
     content = await file.read()
@@ -120,6 +123,7 @@ async def update_customer(
     customer_id: UUID,
     data: CustomerUpdate,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = CustomerRepository(db)
     customer = await repo.get_by_id(customer_id)
@@ -138,6 +142,7 @@ async def update_customer(
 async def delete_customer(
     customer_id: UUID,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role("admin")),
 ):
     repo = CustomerRepository(db)
     customer = await repo.get_by_id(customer_id)
@@ -153,6 +158,7 @@ async def update_customer_status(
     customer_id: UUID,
     status: str = Query(...),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     if status not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {VALID_STATUSES}")
@@ -183,6 +189,7 @@ async def enrich_customer(
     customer_id: UUID,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = CustomerRepository(db)
     customer = await repo.get_by_id(customer_id)

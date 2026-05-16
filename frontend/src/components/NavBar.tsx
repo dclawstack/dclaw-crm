@@ -1,11 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import GlobalSearch from "@/components/GlobalSearch";
+import { getStoredUser, clearAuth, isAuthenticated } from "@/lib/auth";
+import type { AuthUser } from "@/lib/api";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Dashboard" },
+  { href: "/dashboard", label: "Dashboard" },
   { href: "/customers", label: "Customers" },
   { href: "/deals", label: "Deals" },
   { href: "/activities", label: "Activities" },
@@ -15,9 +18,21 @@ const NAV_ITEMS = [
 
 export default function NavBar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [user, setUser] = useState<AuthUser | null>(null);
 
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
+  useEffect(() => {
+    if (isAuthenticated()) setUser(getStoredUser());
+  }, [pathname]);
+
+  const isActive = (href: string) => pathname.startsWith(href);
+
+  if (pathname === "/") return null;
+
+  const handleLogout = () => {
+    clearAuth();
+    router.push("/login");
+  };
 
   return (
     <nav className="sticky top-0 z-40 border-b border-[#E8E8EC] bg-white shadow-[0_2px_6px_rgba(15,15,18,0.06)]">
@@ -41,6 +56,20 @@ export default function NavBar() {
           ))}
         </div>
         <GlobalSearch />
+        {user && (
+          <div className="flex items-center gap-3 border-l border-[#E8E8EC] pl-4">
+            <span className="max-w-[140px] truncate text-xs text-[#7A7A85]">{user.email}</span>
+            <span className="rounded-full bg-[#F1EEF8] px-2 py-0.5 text-xs font-medium text-[#7660A8]">
+              {user.role}
+            </span>
+            <button
+              onClick={handleLogout}
+              className="rounded-lg px-3 py-1.5 text-sm font-medium text-[#404049] transition-all duration-[240ms] hover:bg-[#FBE9E7] hover:text-[#B3261E]"
+            >
+              Log out
+            </button>
+          </div>
+        )}
       </div>
     </nav>
   );

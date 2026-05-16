@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
+from app.core.auth import get_current_user, require_role
 from app.repositories.activity_repo import ActivityRepository
 from app.schemas.activity import ActivityCreate, ActivityUpdate, ActivityResponse, ActivityListResponse
 from app.models.activity import Activity
@@ -66,6 +67,7 @@ async def list_activities(
 async def create_activity(
     data: ActivityCreate,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = ActivityRepository(db)
     activity = Activity(**data.model_dump())
@@ -90,6 +92,7 @@ async def update_activity(
     activity_id: UUID,
     data: ActivityUpdate,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = ActivityRepository(db)
     activity = await repo.get_by_id(activity_id)
@@ -104,6 +107,7 @@ async def update_activity(
 async def delete_activity(
     activity_id: UUID,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role("admin")),
 ):
     repo = ActivityRepository(db)
     activity = await repo.get_by_id(activity_id)
@@ -116,6 +120,7 @@ async def delete_activity(
 async def toggle_complete(
     activity_id: UUID,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = ActivityRepository(db)
     activity = await repo.get_by_id(activity_id)

@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.auth import get_current_user, require_role
 from app.repositories.deal_repo import DealRepository
 from app.repositories.customer_repo import CustomerRepository
 from app.repositories.activity_repo import ActivityRepository
@@ -39,6 +40,7 @@ async def list_deals(
 async def create_deal(
     data: DealCreate,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = DealRepository(db)
     deal = Deal(**data.model_dump())
@@ -72,6 +74,7 @@ async def export_deals(db: AsyncSession = Depends(get_db)):
 async def import_deals(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     deal_repo = DealRepository(db)
     customer_repo = CustomerRepository(db)
@@ -124,6 +127,7 @@ async def update_deal(
     deal_id: UUID,
     data: DealUpdate,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = DealRepository(db)
     deal = await repo.get_by_id(deal_id)
@@ -142,6 +146,7 @@ async def update_deal(
 async def delete_deal(
     deal_id: UUID,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role("admin")),
 ):
     repo = DealRepository(db)
     deal = await repo.get_by_id(deal_id)
@@ -157,6 +162,7 @@ async def move_deal_stage(
     deal_id: UUID,
     stage: str = Query(...),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     if stage not in VALID_STAGES:
         raise HTTPException(status_code=400, detail=f"Invalid stage. Must be one of: {VALID_STAGES}")
