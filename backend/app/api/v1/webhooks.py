@@ -1,5 +1,5 @@
 import json
-from uuid import UUID, uuid4
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +34,7 @@ async def list_webhooks(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = WebhookEndpointRepository(db)
     items, total = await repo.list_all(limit, offset)
@@ -41,7 +42,11 @@ async def list_webhooks(
 
 
 @router.post("/", response_model=WebhookEndpointResponse, status_code=201)
-async def create_webhook(data: WebhookEndpointCreate, db: AsyncSession = Depends(get_db), _: object = Depends(require_role("admin"))):
+async def create_webhook(
+    data: WebhookEndpointCreate,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role("admin")),
+):
     repo = WebhookEndpointRepository(db)
     endpoint = WebhookEndpoint(
         url=data.url,
@@ -49,12 +54,15 @@ async def create_webhook(data: WebhookEndpointCreate, db: AsyncSession = Depends
         secret=data.secret,
         active=data.active,
     )
-    created = await repo.create(endpoint)
-    return _to_response(created)
+    return _to_response(await repo.create(endpoint))
 
 
 @router.delete("/{webhook_id}", status_code=204)
-async def delete_webhook(webhook_id: UUID, db: AsyncSession = Depends(get_db), _: object = Depends(require_role("admin"))):
+async def delete_webhook(
+    webhook_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role("admin")),
+):
     repo = WebhookEndpointRepository(db)
     endpoint = await repo.get_by_id(webhook_id)
     if not endpoint:
@@ -67,6 +75,7 @@ async def get_webhook_deliveries(
     webhook_id: UUID,
     limit: int = Query(10, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     delivery_repo = WebhookDeliveryRepository(db)
     return await delivery_repo.list_by_endpoint(webhook_id, limit)

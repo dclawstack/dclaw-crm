@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -15,10 +16,13 @@ from app.schemas.deal import DealCreate, DealUpdate, DealResponse, DealListRespo
 from app.models.deal import Deal
 from app.models.activity import Activity
 from app.services.deal_health import compute_deal_health
+from app.core.events import event_bus
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 VALID_STAGES = {"prospecting", "qualification", "proposal", "negotiation", "closed_won", "closed_lost"}
+MAX_IMPORT_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
 @router.get("/", response_model=DealListResponse)
@@ -27,6 +31,7 @@ async def list_deals(
     offset: int = Query(0, ge=0),
     stage: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),  # was unauthenticated
 ):
     repo = DealRepository(db)
     if stage:
@@ -47,11 +52,15 @@ async def create_deal(
     created = await repo.create(deal)
     audit = AuditLogRepository(db)
     await audit.log("deal", str(created.id), "created")
+    logger.info("Deal created: id=%s title=%r", created.id, created.title)
     return created
 
 
 @router.get("/export")
-async def export_deals(db: AsyncSession = Depends(get_db)):
+async def export_deals(
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),  # was unauthenticated — full pipeline dump to anyone
+):
     repo = DealRepository(db)
     items, _ = await repo.list_all(limit=10000, offset=0)
     output = io.StringIO()
@@ -76,24 +85,46 @@ async def import_deals(
     db: AsyncSession = Depends(get_db),
     _: object = Depends(get_current_user),
 ):
-    deal_repo = DealRepository(db)
-    customer_repo = CustomerRepository(db)
-    content = await file.read()
-    reader = csv.DictReader(io.StringIO(content.decode("utf-8")))
-    imported = 0
-    skipped = 0
-    errors: list[str] = []
+    from sqlalchemy import select as sa_select
+    from app.models.customer import Customer as CustomerModel
 
+    content = await file.read(MAX_IMPORT_BYTES + 1)
+    if len(content) > MAX_IMPORT_BYTES:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 5 MB.")
+
+    reader = csv.DictReader(io.StringIO(content.decode("utf-8")))
+    errors: list[str] = []
+    skipped = 0
+
+    # First pass: collect valid rows and unique customer emails
+    valid_rows: list[tuple[int, dict]] = []
+    needed_emails: set[str] = set()
     for i, row in enumerate(reader, start=2):
         title = (row.get("title") or "").strip()
-        customer_email = (row.get("customer_email") or "").strip()
-        if not title or not customer_email:
+        email = (row.get("customer_email") or "").strip()
+        if not title or not email:
             errors.append(f"Row {i}: missing title or customer_email")
             skipped += 1
             continue
-        customer = await customer_repo.get_by_email(customer_email)
-        if not customer:
-            errors.append(f"Row {i}: customer {customer_email} not found")
+        valid_rows.append((i, row))
+        needed_emails.add(email)
+
+    if not valid_rows:
+        return {"imported": 0, "skipped": skipped, "errors": errors}
+
+    # Single query to resolve all referenced customer emails to IDs
+    cust_result = await db.execute(
+        sa_select(CustomerModel.email, CustomerModel.id).where(CustomerModel.email.in_(needed_emails))
+    )
+    email_to_id = {row[0]: row[1] for row in cust_result}
+
+    # Second pass: build deal objects
+    to_insert: list[Deal] = []
+    for i, row in valid_rows:
+        email = row.get("customer_email", "").strip()
+        customer_id = email_to_id.get(email)
+        if not customer_id:
+            errors.append(f"Row {i}: customer {email} not found")
             skipped += 1
             continue
         try:
@@ -103,10 +134,15 @@ async def import_deals(
         stage = (row.get("stage") or "prospecting").strip()
         if stage not in VALID_STAGES:
             stage = "prospecting"
-        deal = Deal(customer_id=customer.id, title=title, value=value, stage=stage)
-        await deal_repo.create(deal)
-        imported += 1
+        to_insert.append(Deal(customer_id=customer_id, title=row.get("title", "").strip(), value=value, stage=stage))
 
+    # Single bulk commit
+    if to_insert:
+        db.add_all(to_insert)
+        await db.commit()
+
+    imported = len(to_insert)
+    logger.info("Deal import complete: imported=%d skipped=%d", imported, skipped)
     return {"imported": imported, "skipped": skipped, "errors": errors}
 
 
@@ -114,6 +150,7 @@ async def import_deals(
 async def get_deal(
     deal_id: UUID,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),  # was unauthenticated
 ):
     repo = DealRepository(db)
     deal = await repo.get_by_id(deal_id)
@@ -133,7 +170,10 @@ async def update_deal(
     deal = await repo.get_by_id(deal_id)
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
-    update_data = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
+
+    # exclude_unset=True without the extra `if v is not None` filter — allows clearing optional fields
+    update_data = data.model_dump(exclude_unset=True)
+
     audit = AuditLogRepository(db)
     for field, new_val in update_data.items():
         old_val = str(getattr(deal, field, ""))
@@ -155,6 +195,7 @@ async def delete_deal(
     audit = AuditLogRepository(db)
     await audit.log("deal", str(deal_id), "deleted")
     await repo.delete(deal)
+    logger.info("Deal deleted: id=%s", deal_id)
 
 
 @router.patch("/{deal_id}/stage", response_model=DealResponse)
@@ -186,11 +227,27 @@ async def move_deal_stage(
     )
     await act_repo.create(act)
 
+    # Broadcast to every connected SSE client so Kanban boards update live
+    await event_bus.publish({
+        "type": "deal_stage_changed",
+        "deal_id": str(deal_id),
+        "old_stage": old_stage,
+        "stage": stage,
+        "title": updated.title,
+        "value": updated.value,
+        "customer_name": updated.customer.name if updated.customer else "",
+        "probability": updated.probability,
+    })
+
     return updated
 
 
 @router.get("/{deal_id}/health")
-async def get_deal_health(deal_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_deal_health(
+    deal_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),  # was unauthenticated
+):
     repo = DealRepository(db)
     deal = await repo.get_by_id(deal_id)
     if not deal:

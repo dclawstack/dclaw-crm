@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,50 +38,115 @@ export default function DealDetailPage() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [noteText, setNoteText] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [savingNote, setSavingNote] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
-    const [dealData, activitiesData, healthData, notesData] = await Promise.all([
-      getDeal(id),
-      listActivities(100, 0, undefined, id),
-      getDealHealth(id),
-      listNotes(undefined, id),
-    ]);
-    setDeal(dealData);
-    setActivities(activitiesData.items);
-    setHealth(healthData);
-    setNotes(notesData.items);
-    setLoading(false);
-  };
+    setError(null);
+    try {
+      const [dealData, activitiesData, healthData, notesData] = await Promise.all([
+        getDeal(id),
+        listActivities(100, 0, undefined, id),
+        getDealHealth(id),
+        listNotes(undefined, id),
+      ]);
+      setDeal(dealData);
+      setActivities(activitiesData.items);
+      setHealth(healthData);
+      setNotes(notesData.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load deal");
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
 
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { load(); }, [load]);
 
   const handleStageChange = async (stage: string) => {
     if (!id) return;
-    await updateDeal(id, { stage });
-    await load();
+    try {
+      await updateDeal(id, { stage });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update stage");
+    }
   };
 
   const handleSaveNote = async () => {
     if (!noteText.trim() || !id) return;
-    await createNote({ content: noteText.trim(), deal_id: id });
-    setNoteText("");
-    const notesData = await listNotes(undefined, id);
-    setNotes(notesData.items);
+    setSavingNote(true);
+    try {
+      await createNote({ content: noteText.trim(), deal_id: id });
+      setNoteText("");
+      const notesData = await listNotes(undefined, id);
+      setNotes(notesData.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save note");
+    } finally {
+      setSavingNote(false);
+    }
   };
 
   const handleDeleteNote = async (nid: string) => {
-    await deleteNote(nid);
-    const notesData = await listNotes(undefined, id);
-    setNotes(notesData.items);
+    try {
+      await deleteNote(nid);
+      const notesData = await listNotes(undefined, id);
+      setNotes(notesData.items);
+    } catch {
+      // Non-critical — silently ignore
+    }
   };
 
-  if (loading) return <div className="text-[#7A7A85]">Loading…</div>;
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="h-10 w-64 animate-pulse rounded-2xl bg-[#F2F2F4]" />
+        <div className="grid gap-4 sm:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-24 animate-pulse rounded-2xl bg-[#F2F2F4]" />
+          ))}
+        </div>
+        <div className="h-20 animate-pulse rounded-2xl bg-[#F2F2F4]" />
+        <div className="h-48 animate-pulse rounded-2xl bg-[#F2F2F4]" />
+      </div>
+    );
+  }
+
+  if (error && !deal) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-[#F5C6C4] bg-[#FBE9E7] px-4 py-3">
+        <span className="text-sm text-[#B3261E]">{error}</span>
+        <Button
+          variant="outline" size="sm"
+          className="ml-auto rounded-full border-[#F5C6C4] text-xs text-[#B3261E] hover:bg-[#F5C6C4]"
+          onClick={load}
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
   if (!deal) return <div className="text-[#7A7A85]">Deal not found.</div>;
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="flex items-center gap-3 rounded-2xl border border-[#F5C6C4] bg-[#FBE9E7] px-4 py-3">
+          <span className="text-sm text-[#B3261E]">{error}</span>
+          <Button
+            variant="outline" size="sm"
+            className="ml-auto rounded-full border-[#F5C6C4] text-xs text-[#B3261E] hover:bg-[#F5C6C4]"
+            onClick={() => setError(null)}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#0F0F12]">{deal.title}</h1>
@@ -174,8 +239,12 @@ export default function DealDetailPage() {
                 rows={2}
                 className="flex-1 rounded-xl border border-[#E8E8EC] bg-white px-3 py-2 text-sm text-[#404049] placeholder-[#A3A3AC] focus:border-[#C9C0DE] focus:outline-none resize-none"
               />
-              <Button onClick={handleSaveNote} disabled={!noteText.trim()} className="self-start rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]">
-                Save
+              <Button
+                onClick={handleSaveNote}
+                disabled={!noteText.trim() || savingNote}
+                className="self-start rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]"
+              >
+                {savingNote ? "Saving…" : "Save"}
               </Button>
             </div>
             {notes.map((n) => (

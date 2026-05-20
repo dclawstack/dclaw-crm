@@ -18,6 +18,7 @@ async def list_notes(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = NoteRepository(db)
     if customer_id:
@@ -30,14 +31,22 @@ async def list_notes(
 
 
 @router.post("/", response_model=NoteResponse, status_code=201)
-async def create_note(data: NoteCreate, db: AsyncSession = Depends(get_db), _: object = Depends(get_current_user)):
+async def create_note(
+    data: NoteCreate,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
+):
     repo = NoteRepository(db)
     note = Note(content=data.content, customer_id=data.customer_id, deal_id=data.deal_id)
     return await repo.create(note)
 
 
 @router.get("/{note_id}", response_model=NoteResponse)
-async def get_note(note_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_note(
+    note_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
+):
     repo = NoteRepository(db)
     note = await repo.get_by_id(note_id)
     if not note:
@@ -46,17 +55,25 @@ async def get_note(note_id: UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{note_id}", response_model=NoteResponse)
-async def update_note(note_id: UUID, data: NoteUpdate, db: AsyncSession = Depends(get_db), _: object = Depends(get_current_user)):
+async def update_note(
+    note_id: UUID,
+    data: NoteUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
+):
     repo = NoteRepository(db)
     note = await repo.get_by_id(note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
-    update_data = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
-    return await repo.update(note, **update_data)
+    return await repo.update(note, **data.model_dump(exclude_unset=True))
 
 
 @router.delete("/{note_id}", status_code=204)
-async def delete_note(note_id: UUID, db: AsyncSession = Depends(get_db), _: object = Depends(require_role("admin"))):
+async def delete_note(
+    note_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role("admin")),
+):
     repo = NoteRepository(db)
     note = await repo.get_by_id(note_id)
     if not note:

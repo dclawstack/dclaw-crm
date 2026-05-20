@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,9 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import ImportModal from "@/components/ImportModal";
-import { listCustomers, createCustomer, importCustomers, exportCustomers, type CustomerCreate } from "@/lib/api";
+import {
+  listCustomers, createCustomer, importCustomers, exportCustomers, type CustomerCreate,
+} from "@/lib/api";
 
 const STATUSES = ["lead", "prospect", "active", "inactive", "churned"];
 
@@ -26,29 +28,48 @@ function statusBadge(status: string) {
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Awaited<ReturnType<typeof listCustomers>> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<CustomerCreate>({ name: "", email: "" });
+  const [saving, setSaving] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
-    const data = await listCustomers(200, 0);
-    setCustomers(data);
-    setLoading(false);
-  };
+    setError(null);
+    try {
+      const data = await listCustomers(200, 0);
+      setCustomers(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load customers");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const handleCreate = async () => {
-    await createCustomer(form);
-    setOpen(false);
-    setForm({ name: "", email: "" });
-    await load();
+    setSaving(true);
+    try {
+      await createCustomer(form);
+      setOpen(false);
+      setForm({ name: "", email: "" });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create customer");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const filtered = customers?.items.filter((c) => {
     const q = search.toLowerCase();
-    return c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || (c.company ?? "").toLowerCase().includes(q);
+    return (
+      c.name.toLowerCase().includes(q) ||
+      c.email.toLowerCase().includes(q) ||
+      (c.company ?? "").toLowerCase().includes(q)
+    );
   });
 
   return (
@@ -63,24 +84,72 @@ export default function CustomersPage() {
             exportFilename="customers.csv"
           />
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger>
-              <Button className="rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]">Add Customer</Button>
+            <DialogTrigger asChild>
+              <Button className="rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]">
+                Add Customer
+              </Button>
             </DialogTrigger>
             <DialogContent className="rounded-2xl">
               <DialogHeader><DialogTitle>New Customer</DialogTitle></DialogHeader>
               <div className="space-y-3">
-                <div><Label>Name</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="rounded-xl border-[#E8E8EC]" /></div>
-                <div><Label>Email</Label><Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="rounded-xl border-[#E8E8EC]" /></div>
-                <div><Label>Phone</Label><Input value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="rounded-xl border-[#E8E8EC]" /></div>
-                <div><Label>Company</Label><Input value={form.company ?? ""} onChange={(e) => setForm({ ...form, company: e.target.value })} className="rounded-xl border-[#E8E8EC]" /></div>
-                <Button onClick={handleCreate} disabled={!form.name || !form.email} className="rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]">
-                  Save
+                <div>
+                  <Label>Name</Label>
+                  <Input
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    className="rounded-xl border-[#E8E8EC]"
+                  />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    className="rounded-xl border-[#E8E8EC]"
+                  />
+                </div>
+                <div>
+                  <Label>Phone</Label>
+                  <Input
+                    value={form.phone ?? ""}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    className="rounded-xl border-[#E8E8EC]"
+                  />
+                </div>
+                <div>
+                  <Label>Company</Label>
+                  <Input
+                    value={form.company ?? ""}
+                    onChange={(e) => setForm({ ...form, company: e.target.value })}
+                    className="rounded-xl border-[#E8E8EC]"
+                  />
+                </div>
+                <Button
+                  onClick={handleCreate}
+                  disabled={!form.name || !form.email || saving}
+                  className="rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]"
+                >
+                  {saving ? "Saving…" : "Save"}
                 </Button>
               </div>
             </DialogContent>
           </Dialog>
         </div>
       </div>
+
+      {error && (
+        <div className="flex items-center gap-3 rounded-2xl border border-[#F5C6C4] bg-[#FBE9E7] px-4 py-3">
+          <span className="text-sm text-[#B3261E]">{error}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto rounded-full border-[#F5C6C4] text-xs text-[#B3261E] hover:bg-[#F5C6C4]"
+            onClick={load}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
 
       <Input
         placeholder="Search by name, email, company…"
@@ -102,20 +171,36 @@ export default function CustomersPage() {
             </TableHeader>
             <TableBody>
               {loading && (
-                <TableRow><TableCell colSpan={4} className="text-center text-[#7A7A85]">Loading…</TableCell></TableRow>
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i} className="border-b border-[#E8E8EC]">
+                    {[0, 1, 2, 3].map((j) => (
+                      <TableCell key={j}>
+                        <div className="h-4 animate-pulse rounded bg-[#F2F2F4]" />
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
               )}
               {!loading && filtered?.length === 0 && (
-                <TableRow><TableCell colSpan={4} className="text-center text-[#7A7A85]">No customers found.</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-[#7A7A85]">
+                    No customers found.
+                  </TableCell>
+                </TableRow>
               )}
-              {filtered?.map((c) => (
+              {!loading && filtered?.map((c) => (
                 <TableRow key={c.id} className="border-b border-[#E8E8EC] hover:bg-[#F8F8FA]">
                   <TableCell>
-                    <Link href={`/customers/${c.id}`} className="font-medium text-[#7660A8] hover:underline">{c.name}</Link>
+                    <Link href={`/customers/${c.id}`} className="font-medium text-[#7660A8] hover:underline">
+                      {c.name}
+                    </Link>
                   </TableCell>
                   <TableCell className="text-[#404049]">{c.email}</TableCell>
                   <TableCell className="text-[#404049]">{c.company ?? "—"}</TableCell>
                   <TableCell>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(c.status)}`}>{c.status}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(c.status)}`}>
+                      {c.status}
+                    </span>
                   </TableCell>
                 </TableRow>
               ))}

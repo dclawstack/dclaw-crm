@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
 
 const CYCLING = ["closes deals faster", "moves pipelines", "forecasts revenue", "never loses context", "stays organized"];
 
@@ -37,6 +38,7 @@ const TAG_COLOR: Record<string, string> = {
 };
 
 export default function LandingPage() {
+  const { user } = useAuth();
   const [wordIdx, setWordIdx] = useState(0);
   const [visible, setVisible] = useState(true);
 
@@ -87,8 +89,12 @@ export default function LandingPage() {
             ))}
           </nav>
           <div className="flex items-center gap-3">
-            <Link href="/login" className="px-4 py-2 text-sm font-medium text-[#404049] hover:text-[#7660A8] transition-colors">Sign in</Link>
-            <Link href="/dashboard" className="px-5 py-2 text-sm font-semibold text-white bg-[#7660A8] rounded-full hover:bg-[#5C4A8E] shadow-[0_4px_16px_rgba(118,96,168,.35)] transition-all">Open App →</Link>
+            {!user && (
+              <Link href="/login" className="px-4 py-2 text-sm font-medium text-[#404049] hover:text-[#7660A8] transition-colors">Sign in</Link>
+            )}
+            <Link href="/dashboard" className="px-5 py-2 text-sm font-semibold text-white bg-[#7660A8] rounded-full hover:bg-[#5C4A8E] shadow-[0_4px_16px_rgba(118,96,168,.35)] transition-all">
+              {user ? "Dashboard →" : "Open App →"}
+            </Link>
           </div>
         </header>
 
@@ -148,11 +154,13 @@ export default function LandingPage() {
 
             <div className="fade-up flex flex-wrap items-center justify-center gap-4 mb-16" style={{animationDelay:'.3s'}}>
               <Link href="/dashboard" className="group px-8 py-4 text-base font-semibold text-white bg-[#7660A8] rounded-full shadow-[0_8px_32px_rgba(118,96,168,.4)] hover:bg-[#5C4A8E] hover:shadow-[0_12px_40px_rgba(118,96,168,.5)] hover:-translate-y-0.5 transition-all duration-300">
-                Start for free <span className="group-hover:translate-x-1 inline-block transition-transform">→</span>
+                {user ? "Go to Dashboard" : "Start for free"} <span className="group-hover:translate-x-1 inline-block transition-transform">→</span>
               </Link>
-              <Link href="/login" className="px-8 py-4 text-base font-semibold text-[#7660A8] bg-white border-2 border-[#7660A8] rounded-full hover:bg-[#F1EEF8] hover:-translate-y-0.5 transition-all duration-300">
-                Sign in
-              </Link>
+              {!user && (
+                <Link href="/login" className="px-8 py-4 text-base font-semibold text-[#7660A8] bg-white border-2 border-[#7660A8] rounded-full hover:bg-[#F1EEF8] hover:-translate-y-0.5 transition-all duration-300">
+                  Sign in
+                </Link>
+              )}
             </div>
 
             {/* Mini dashboard mockup */}
@@ -250,24 +258,24 @@ export default function LandingPage() {
               <div className="rounded-2xl border border-[#E8E8EC] shadow-[0_24px_64px_rgba(118,96,168,.15)] overflow-hidden bg-[#F8F8FA] p-5">
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { stage:"Qualification",c:"#E5EFF9",t:"#2C6CB0",n:2,v:"$52k"},
-                    { stage:"Negotiation",c:"#FBF1DC",t:"#C28A00",n:2,v:"$174k"},
-                    { stage:"Closed Won",c:"#E6F4EC",t:"#2E8B57",n:3,v:"$183k"},
+                    { stage:"Qualification", c:"#E5EFF9", t:"#2C6CB0", deals:[{title:"Pilot Program",v:"$9.5k",p:35},{title:"SaaS Sub.",v:"$85k",p:55}] },
+                    { stage:"Negotiation",   c:"#FBF1DC", t:"#C28A00", deals:[{title:"Enterprise Lic.",v:"$120k",p:80},{title:"Finance Mod.",v:"$54k",p:85}] },
+                    { stage:"Closed Won",    c:"#E6F4EC", t:"#2E8B57", deals:[{title:"Multi-Cloud",v:"$98k",p:100},{title:"Analytics Suite",v:"$85k",p:100}] },
                   ].map(col=>(
                     <div key={col.stage}>
                       <div className="rounded-lg px-2 py-1.5 mb-2 flex justify-between items-center" style={{background:col.c}}>
                         <span className="text-xs font-semibold" style={{color:col.t}}>{col.stage}</span>
-                        <span className="text-xs font-bold" style={{color:col.t}}>{col.v}</span>
+                        <span className="text-xs font-bold" style={{color:col.t}}>{col.deals.length}</span>
                       </div>
-                      {Array.from({length:col.n}).map((_,i)=>(
-                        <div key={i} className="bg-white rounded-xl border border-[#E8E8EC] p-3 mb-2 shadow-sm card-hover cursor-grab">
-                          <div className="text-xs font-semibold text-[#0F0F12] mb-2">{["Pilot Program","SaaS Sub.","Enterprise Lic.","Multi-Cloud","Analytics Suite","Finance Mod."][i*3+Math.floor(Math.random()*2)]}</div>
+                      {col.deals.map((d)=>(
+                        <div key={d.title} className="bg-white rounded-xl border border-[#E8E8EC] p-3 mb-2 shadow-sm card-hover cursor-grab">
+                          <div className="text-xs font-semibold text-[#0F0F12] mb-2 truncate">{d.title}</div>
                           <div className="flex justify-between text-xs text-[#A3A3AC]">
-                            <span>{["$9.5k","$85k","$120k","$98k","$19.5k","$54k"][i*2]}</span>
-                            <span>{[35,100,80,100,100,85][i*2]}%</span>
+                            <span>{d.v}</span>
+                            <span>{d.p}%</span>
                           </div>
                           <div className="mt-1.5 h-1 bg-[#F1EEF8] rounded-full overflow-hidden">
-                            <div className="h-full rounded-full" style={{width:`${[35,100,80,100,100,85][i*2]}%`,background:col.t}}/>
+                            <div className="h-full rounded-full" style={{width:`${d.p}%`,background:col.t}}/>
                           </div>
                         </div>
                       ))}

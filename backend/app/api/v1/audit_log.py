@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.auth import get_current_user
 from app.repositories.audit_log_repo import AuditLogRepository
 from app.schemas.audit_log import AuditLogListResponse
 
@@ -15,6 +16,7 @@ async def list_audit_log(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = AuditLogRepository(db)
     if entity_type and entity_id:

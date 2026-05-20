@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import KanbanBoard from "@/components/KanbanBoard";
 import ImportModal from "@/components/ImportModal";
-import { listDeals, createDeal, listCustomers, importDeals, exportDeals, type DealCreate } from "@/lib/api";
+import {
+  listDeals, createDeal, listCustomers, importDeals, exportDeals, type DealCreate,
+} from "@/lib/api";
 
 const STAGES = ["prospecting", "qualification", "proposal", "negotiation", "closed_won", "closed_lost"];
 const STAGE_LABELS: Record<string, string> = {
@@ -37,29 +39,44 @@ export default function DealsPage() {
   const [deals, setDeals] = useState<Awaited<ReturnType<typeof listDeals>> | null>(null);
   const [customers, setCustomers] = useState<Awaited<ReturnType<typeof listCustomers>> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [stageFilter, setStageFilter] = useState("");
   const [view, setView] = useState<"table" | "kanban">("table");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<DealCreate>({ customer_id: "", title: "", value: 0 });
+  const [saving, setSaving] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
-    const [dealsData, customersData] = await Promise.all([
-      listDeals(200, 0, stageFilter || undefined),
-      listCustomers(100, 0),
-    ]);
-    setDeals(dealsData);
-    setCustomers(customersData);
-    setLoading(false);
-  };
+    setError(null);
+    try {
+      const [dealsData, customersData] = await Promise.all([
+        listDeals(200, 0, stageFilter || undefined),
+        listCustomers(100, 0),
+      ]);
+      setDeals(dealsData);
+      setCustomers(customersData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load deals");
+    } finally {
+      setLoading(false);
+    }
+  }, [stageFilter]);
 
-  useEffect(() => { load(); }, [stageFilter]);
+  useEffect(() => { load(); }, [load]);
 
   const handleCreate = async () => {
-    await createDeal(form);
-    setOpen(false);
-    setForm({ customer_id: "", title: "", value: 0 });
-    await load();
+    setSaving(true);
+    try {
+      await createDeal(form);
+      setOpen(false);
+      setForm({ customer_id: "", title: "", value: 0 });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create deal");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -74,40 +91,65 @@ export default function DealsPage() {
             exportFilename="deals.csv"
           />
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger>
-              <Button className="rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]">Add Deal</Button>
+            <DialogTrigger asChild>
+              <Button className="rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]">
+                Add Deal
+              </Button>
             </DialogTrigger>
             <DialogContent className="rounded-2xl">
               <DialogHeader><DialogTitle>New Deal</DialogTitle></DialogHeader>
               <div className="space-y-3">
                 <div>
                   <Label>Customer</Label>
-                  <Select value={form.customer_id} onValueChange={(v) => setForm({ ...form, customer_id: v || "" })}>
+                  <Select
+                    value={form.customer_id}
+                    onValueChange={(v) => setForm({ ...form, customer_id: v || "" })}
+                  >
                     <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
                     <SelectContent>
-                      {customers?.items.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                      {customers?.items.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
                   <Label>Title</Label>
-                  <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="rounded-xl border-[#E8E8EC]" />
+                  <Input
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                    className="rounded-xl border-[#E8E8EC]"
+                  />
                 </div>
                 <div>
                   <Label>Value</Label>
-                  <Input type="number" value={form.value} onChange={(e) => setForm({ ...form, value: Number(e.target.value) })} className="rounded-xl border-[#E8E8EC]" />
+                  <Input
+                    type="number"
+                    value={form.value}
+                    onChange={(e) => setForm({ ...form, value: Number(e.target.value) })}
+                    className="rounded-xl border-[#E8E8EC]"
+                  />
                 </div>
                 <div>
                   <Label>Stage</Label>
-                  <Select value={form.stage} onValueChange={(v) => setForm({ ...form, stage: v || "prospecting" })}>
+                  <Select
+                    value={form.stage}
+                    onValueChange={(v) => setForm({ ...form, stage: v || "prospecting" })}
+                  >
                     <SelectTrigger><SelectValue placeholder="Select stage" /></SelectTrigger>
                     <SelectContent>
-                      {STAGES.map((s) => <SelectItem key={s} value={s}>{STAGE_LABELS[s]}</SelectItem>)}
+                      {STAGES.map((s) => (
+                        <SelectItem key={s} value={s}>{STAGE_LABELS[s]}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <Button onClick={handleCreate} disabled={!form.customer_id || !form.title} className="rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]">
-                  Save
+                <Button
+                  onClick={handleCreate}
+                  disabled={!form.customer_id || !form.title || saving}
+                  className="rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]"
+                >
+                  {saving ? "Saving…" : "Save"}
                 </Button>
               </div>
             </DialogContent>
@@ -115,20 +157,33 @@ export default function DealsPage() {
         </div>
       </div>
 
+      {error && (
+        <div className="flex items-center gap-3 rounded-2xl border border-[#F5C6C4] bg-[#FBE9E7] px-4 py-3">
+          <span className="text-sm text-[#B3261E]">{error}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto rounded-full border-[#F5C6C4] text-xs text-[#B3261E] hover:bg-[#F5C6C4]"
+            onClick={load}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
       <div className="flex items-center gap-3">
         <div className="flex rounded-xl border border-[#E8E8EC] bg-white p-1">
-          <button
-            onClick={() => setView("table")}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${view === "table" ? "bg-[#7660A8] text-white" : "text-[#7A7A85] hover:text-[#404049]"}`}
-          >
-            Table
-          </button>
-          <button
-            onClick={() => setView("kanban")}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${view === "kanban" ? "bg-[#7660A8] text-white" : "text-[#7A7A85] hover:text-[#404049]"}`}
-          >
-            Kanban
-          </button>
+          {(["table", "kanban"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition-all ${
+                view === v ? "bg-[#7660A8] text-white" : "text-[#7A7A85] hover:text-[#404049]"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
         </div>
         {view === "table" && (
           <Select value={stageFilter} onValueChange={(v) => setStageFilter(v || "")}>
@@ -144,7 +199,23 @@ export default function DealsPage() {
       </div>
 
       {loading ? (
-        <p className="text-[#7A7A85]">Loading…</p>
+        <Card className="rounded-2xl border-[#E8E8EC] shadow-sm">
+          <CardContent className="p-0">
+            <Table>
+              <TableBody>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i} className="border-b border-[#E8E8EC]">
+                    {[0, 1, 2, 3, 4].map((j) => (
+                      <TableCell key={j}>
+                        <div className="h-4 animate-pulse rounded bg-[#F2F2F4]" />
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       ) : view === "kanban" && deals ? (
         <KanbanBoard deals={deals.items} onDealMoved={load} />
       ) : (
@@ -162,17 +233,28 @@ export default function DealsPage() {
               </TableHeader>
               <TableBody>
                 {deals?.items.length === 0 && (
-                  <TableRow><TableCell colSpan={5} className="text-center text-[#7A7A85]">No deals found.</TableCell></TableRow>
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-[#7A7A85]">
+                      No deals found.
+                    </TableCell>
+                  </TableRow>
                 )}
                 {deals?.items.map((d) => (
                   <TableRow key={d.id} className="border-b border-[#E8E8EC] hover:bg-[#F8F8FA]">
                     <TableCell>
-                      <Link href={`/deals/${d.id}`} className="font-medium text-[#7660A8] hover:text-[#5C4A8E] hover:underline">{d.title}</Link>
+                      <Link
+                        href={`/deals/${d.id}`}
+                        className="font-medium text-[#7660A8] hover:text-[#5C4A8E] hover:underline"
+                      >
+                        {d.title}
+                      </Link>
                     </TableCell>
                     <TableCell className="text-[#404049]">{d.customer.name}</TableCell>
                     <TableCell className="font-medium text-[#0F0F12]">${d.value.toLocaleString()}</TableCell>
                     <TableCell>
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${stageBadgeClass(d.stage)}`}>{STAGE_LABELS[d.stage]}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${stageBadgeClass(d.stage)}`}>
+                        {STAGE_LABELS[d.stage]}
+                      </span>
                     </TableCell>
                     <TableCell className="text-[#404049]">{d.probability}%</TableCell>
                   </TableRow>

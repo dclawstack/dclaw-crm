@@ -14,7 +14,10 @@ router = APIRouter()
 
 
 @router.get("/due-today", response_model=ActivityListResponse)
-async def due_today(db: AsyncSession = Depends(get_db)):
+async def due_today(
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
+):
     today = date.today()
     result = await db.execute(
         select(Activity).where(
@@ -30,7 +33,10 @@ async def due_today(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/overdue", response_model=ActivityListResponse)
-async def overdue(db: AsyncSession = Depends(get_db)):
+async def overdue(
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
+):
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     result = await db.execute(
         select(Activity).where(
@@ -52,6 +58,7 @@ async def list_activities(
     customer_id: UUID | None = Query(None),
     deal_id: UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = ActivityRepository(db)
     if customer_id:
@@ -71,14 +78,14 @@ async def create_activity(
 ):
     repo = ActivityRepository(db)
     activity = Activity(**data.model_dump())
-    created = await repo.create(activity)
-    return created
+    return await repo.create(activity)
 
 
 @router.get("/{activity_id}", response_model=ActivityResponse)
 async def get_activity(
     activity_id: UUID,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = ActivityRepository(db)
     activity = await repo.get_by_id(activity_id)
@@ -98,9 +105,8 @@ async def update_activity(
     activity = await repo.get_by_id(activity_id)
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
-    update_data = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
-    updated = await repo.update(activity, **update_data)
-    return updated
+    update_data = data.model_dump(exclude_unset=True)
+    return await repo.update(activity, **update_data)
 
 
 @router.delete("/{activity_id}", status_code=204)
@@ -126,5 +132,4 @@ async def toggle_complete(
     activity = await repo.get_by_id(activity_id)
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
-    updated = await repo.update(activity, completed=not activity.completed)
-    return updated
+    return await repo.update(activity, completed=not activity.completed)

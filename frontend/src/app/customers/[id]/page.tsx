@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,9 +29,7 @@ const STATUSES = ["lead", "prospect", "active", "inactive", "churned"];
 
 function statusBadge(status: string) {
   if (status === "active") return "bg-[#E6F4EC] text-[#2E8B57]";
-  if (status === "lead") return "bg-[#F1EEF8] text-[#7660A8]";
-  if (status === "prospect") return "bg-[#F1EEF8] text-[#7660A8]";
-  if (status === "inactive" || status === "churned") return "bg-[#F2F2F4] text-[#7A7A85]";
+  if (status === "lead" || status === "prospect") return "bg-[#F1EEF8] text-[#7660A8]";
   return "bg-[#F2F2F4] text-[#7A7A85]";
 }
 
@@ -46,27 +44,38 @@ export default function CustomerDetailPage() {
   const [contactForm, setContactForm] = useState<ContactCreate>({ customer_id: id ?? "", name: "" });
   const [contactDialogOpen, setContactDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
-    const [cust, notesData, contactsData] = await Promise.all([
-      getCustomer(id),
-      listNotes(id, undefined),
-      listContacts(id),
-    ]);
-    setCustomer(cust);
-    setNotes(notesData.items);
-    setContacts(contactsData.items);
-    setLoading(false);
-  };
+    setError(null);
+    try {
+      const [cust, notesData, contactsData] = await Promise.all([
+        getCustomer(id),
+        listNotes(id, undefined),
+        listContacts(id),
+      ]);
+      setCustomer(cust);
+      setNotes(notesData.items);
+      setContacts(contactsData.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load customer");
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
 
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { load(); }, [load]);
 
   const handleStatusChange = async (status: string) => {
     if (!id) return;
-    await updateCustomerStatus(id, status);
-    await load();
+    try {
+      await updateCustomerStatus(id, status);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update status");
+    }
   };
 
   const handleEnrich = async () => {
@@ -86,38 +95,85 @@ export default function CustomerDetailPage() {
 
   const handleSaveNote = async () => {
     if (!noteText.trim() || !id) return;
-    await createNote({ content: noteText.trim(), customer_id: id });
-    setNoteText("");
-    const notesData = await listNotes(id, undefined);
-    setNotes(notesData.items);
+    try {
+      await createNote({ content: noteText.trim(), customer_id: id });
+      setNoteText("");
+      const notesData = await listNotes(id, undefined);
+      setNotes(notesData.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save note");
+    }
   };
 
   const handleDeleteNote = async (nid: string) => {
-    await deleteNote(nid);
-    const notesData = await listNotes(id, undefined);
-    setNotes(notesData.items);
+    try {
+      await deleteNote(nid);
+      const notesData = await listNotes(id!, undefined);
+      setNotes(notesData.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete note");
+    }
   };
 
   const handleCreateContact = async () => {
     if (!id || !contactForm.name) return;
-    await createContact(id, { ...contactForm, customer_id: id });
-    setContactForm({ customer_id: id, name: "" });
-    setContactDialogOpen(false);
-    const contactsData = await listContacts(id);
-    setContacts(contactsData.items);
+    try {
+      await createContact(id, { ...contactForm, customer_id: id });
+      setContactForm({ customer_id: id, name: "" });
+      setContactDialogOpen(false);
+      const contactsData = await listContacts(id);
+      setContacts(contactsData.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create contact");
+    }
   };
 
   const handleDeleteContact = async (cid: string) => {
-    await deleteContact(cid);
-    const contactsData = await listContacts(id!);
-    setContacts(contactsData.items);
+    try {
+      await deleteContact(cid);
+      const contactsData = await listContacts(id!);
+      setContacts(contactsData.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete contact");
+    }
   };
 
-  if (loading) return <div className="text-[#7A7A85]">Loading…</div>;
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="h-8 w-48 animate-pulse rounded bg-[#F2F2F4]" />
+        <div className="grid gap-4 sm:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-20 animate-pulse rounded-2xl bg-[#F2F2F4]" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !customer) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-[#F5C6C4] bg-[#FBE9E7] px-4 py-3">
+        <span className="text-sm text-[#B3261E]">{error}</span>
+        <Button variant="outline" size="sm"
+          className="ml-auto rounded-full border-[#F5C6C4] text-xs text-[#B3261E] hover:bg-[#F5C6C4]"
+          onClick={load}
+        >Retry</Button>
+      </div>
+    );
+  }
+
   if (!customer) return <div className="text-[#7A7A85]">Customer not found.</div>;
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="flex items-center gap-3 rounded-2xl border border-[#F5C6C4] bg-[#FBE9E7] px-4 py-3">
+          <span className="text-sm text-[#B3261E]">{error}</span>
+          <button onClick={() => setError(null)} className="ml-auto text-xs text-[#B3261E] hover:underline">Dismiss</button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-[#0F0F12]">{customer.name}</h1>
@@ -126,10 +182,7 @@ export default function CustomerDetailPage() {
         <div className="flex items-center gap-3">
           {customer.company && (
             <Button
-              variant="outline"
-              size="sm"
-              onClick={handleEnrich}
-              disabled={enriching}
+              variant="outline" size="sm" onClick={handleEnrich} disabled={enriching}
               className="rounded-full border-[#E8E8EC] text-[#7660A8] hover:bg-[#F1EEF8]"
             >
               {enriching ? "Enriching…" : "Enrich"}
@@ -172,7 +225,7 @@ export default function CustomerDetailPage() {
         </TabsList>
 
         <TabsContent value="deals">
-          {customer.deals.length === 0 ? <p className="text-[#7A7A85]">No deals yet.</p> : (
+          {customer.deals.length === 0 ? <p className="mt-3 text-[#7A7A85]">No deals yet.</p> : (
             <Card className="rounded-2xl border-[#E8E8EC] shadow-sm">
               <CardContent className="p-0">
                 <Table>
@@ -203,8 +256,8 @@ export default function CustomerDetailPage() {
         </TabsContent>
 
         <TabsContent value="activities">
-          {customer.activities.length === 0 ? <p className="text-[#7A7A85]">No activities yet.</p> : (
-            <div className="space-y-2">
+          {customer.activities.length === 0 ? <p className="mt-3 text-[#7A7A85]">No activities yet.</p> : (
+            <div className="mt-3 space-y-2">
               {customer.activities.map((a) => (
                 <Card key={a.id} className="rounded-2xl border-[#E8E8EC] shadow-sm">
                   <CardContent className="flex items-start gap-3 py-3 px-4">
@@ -221,10 +274,12 @@ export default function CustomerDetailPage() {
         </TabsContent>
 
         <TabsContent value="contacts">
-          <div className="space-y-3">
+          <div className="mt-3 space-y-3">
             <Dialog open={contactDialogOpen} onOpenChange={setContactDialogOpen}>
-              <DialogTrigger>
-                <Button size="sm" className="rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]">Add Contact</Button>
+              <DialogTrigger asChild>
+                <Button size="sm" className="rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]">
+                  Add Contact
+                </Button>
               </DialogTrigger>
               <DialogContent className="rounded-2xl">
                 <DialogHeader><DialogTitle>Add Contact</DialogTitle></DialogHeader>
@@ -243,7 +298,9 @@ export default function CustomerDetailPage() {
                 <Card key={c.id} className="rounded-2xl border-[#E8E8EC] shadow-sm">
                   <CardContent className="flex items-start justify-between py-3 px-4">
                     <div>
-                      <p className="text-sm font-semibold text-[#0F0F12]">{c.name}{c.is_primary && <span className="ml-1 text-[#7660A8]">★</span>}</p>
+                      <p className="text-sm font-semibold text-[#0F0F12]">
+                        {c.name}{c.is_primary && <span className="ml-1 text-[#7660A8]">★</span>}
+                      </p>
                       {c.title && <p className="text-xs text-[#7A7A85]">{c.title}</p>}
                       {c.email && <p className="text-xs text-[#404049]">{c.email}</p>}
                       {c.phone && <p className="text-xs text-[#404049]">{c.phone}</p>}
@@ -259,7 +316,7 @@ export default function CustomerDetailPage() {
         </TabsContent>
 
         <TabsContent value="notes">
-          <div className="space-y-3">
+          <div className="mt-3 space-y-3">
             <div className="flex gap-2">
               <textarea
                 value={noteText}
@@ -268,7 +325,13 @@ export default function CustomerDetailPage() {
                 rows={2}
                 className="flex-1 rounded-xl border border-[#E8E8EC] bg-white px-3 py-2 text-sm text-[#404049] placeholder-[#A3A3AC] focus:border-[#C9C0DE] focus:outline-none resize-none"
               />
-              <Button onClick={handleSaveNote} disabled={!noteText.trim()} className="self-start rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]">Save</Button>
+              <Button
+                onClick={handleSaveNote}
+                disabled={!noteText.trim()}
+                className="self-start rounded-full bg-[#7660A8] text-white hover:bg-[#5C4A8E]"
+              >
+                Save
+              </Button>
             </div>
             {notes.map((n) => (
               <Card key={n.id} className="rounded-2xl border-[#E8E8EC] shadow-sm">
@@ -288,7 +351,7 @@ export default function CustomerDetailPage() {
         </TabsContent>
 
         <TabsContent value="history">
-          <Card className="rounded-2xl border-[#E8E8EC] shadow-sm">
+          <Card className="mt-3 rounded-2xl border-[#E8E8EC] shadow-sm">
             <CardContent className="py-4">
               <AuditLogTimeline entityType="customer" entityId={id} />
             </CardContent>

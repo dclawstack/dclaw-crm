@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,12 @@ type ForecastData = Awaited<ReturnType<typeof getForecast>>;
 
 const STAGE_ORDER = ["prospecting", "qualification", "proposal", "negotiation", "closed_won", "closed_lost"];
 const STAGE_LABELS: Record<string, string> = {
-  prospecting: "Prospecting", qualification: "Qualification", proposal: "Proposal",
-  negotiation: "Negotiation", closed_won: "Closed Won", closed_lost: "Closed Lost",
+  prospecting: "Prospecting",
+  qualification: "Qualification",
+  proposal: "Proposal",
+  negotiation: "Negotiation",
+  closed_won: "Closed Won",
+  closed_lost: "Closed Lost",
 };
 
 const PRESETS = [
@@ -28,11 +32,25 @@ function weekStart() {
   const d = new Date(); d.setDate(d.getDate() - d.getDay()); return d.toISOString().slice(0, 10);
 }
 function monthStart() {
-  const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 function quarterStart() {
   const d = new Date(); const q = Math.floor(d.getMonth() / 3);
   return `${d.getFullYear()}-${String(q * 3 + 1).padStart(2, "0")}-01`;
+}
+
+function StatCardSkeleton() {
+  return (
+    <Card className="rounded-2xl border-[#E8E8EC] bg-white shadow-sm">
+      <CardHeader className="pb-2">
+        <div className="h-3 w-24 animate-pulse rounded bg-[#F2F2F4]" />
+      </CardHeader>
+      <CardContent>
+        <div className="h-8 w-16 animate-pulse rounded bg-[#F2F2F4]" />
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function DashboardPage() {
@@ -41,19 +59,26 @@ export default function DashboardPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const load = async (from: string, to: string) => {
+  const load = useCallback(async (from: string, to: string) => {
     setLoading(true);
-    const [dash, fore] = await Promise.all([
-      getDashboard(from || undefined, to || undefined),
-      getForecast(from || undefined, to || undefined),
-    ]);
-    setData(dash);
-    setForecast(fore);
-    setLoading(false);
-  };
+    setError(null);
+    try {
+      const [dash, fore] = await Promise.all([
+        getDashboard(from || undefined, to || undefined),
+        getForecast(from || undefined, to || undefined),
+      ]);
+      setData(dash);
+      setForecast(fore);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load dashboard");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  useEffect(() => { load(fromDate, toDate); }, [fromDate, toDate]);
+  useEffect(() => { load(fromDate, toDate); }, [fromDate, toDate, load]);
 
   const applyPreset = (from: string | (() => string), to: string | (() => string)) => {
     setFromDate(typeof from === "function" ? from() : from);
@@ -79,31 +104,66 @@ export default function DashboardPage() {
             </Button>
           ))}
           <input
-            type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
             className="rounded-xl border border-[#E8E8EC] bg-white px-2 py-1 text-xs focus:border-[#C9C0DE] focus:outline-none"
           />
           <span className="text-xs text-[#7A7A85]">—</span>
           <input
-            type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
             className="rounded-xl border border-[#E8E8EC] bg-white px-2 py-1 text-xs focus:border-[#C9C0DE] focus:outline-none"
           />
         </div>
       </div>
 
+      {error && (
+        <div className="flex items-center gap-3 rounded-2xl border border-[#F5C6C4] bg-[#FBE9E7] px-4 py-3">
+          <span className="text-sm text-[#B3261E]">{error}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto rounded-full border-[#F5C6C4] text-xs text-[#B3261E] hover:bg-[#F5C6C4]"
+            onClick={() => load(fromDate, toDate)}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
       {loading ? (
-        <div className="text-[#7A7A85]">Loading dashboard…</div>
-      ) : !data ? null : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => <StatCardSkeleton key={i} />)}
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            {[0, 1].map((i) => (
+              <Card key={i} className="rounded-2xl border-[#E8E8EC] bg-white shadow-sm">
+                <CardContent className="p-6 space-y-3">
+                  {[0, 1, 2, 3].map((j) => (
+                    <div key={j} className="h-4 animate-pulse rounded bg-[#F2F2F4]" />
+                  ))}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </>
+      ) : data ? (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              { label: "Total Customers", value: data.total_customers.toString() },
-              { label: "Open Deals", value: data.open_deals.toString() },
+              { label: "Total Customers", value: data.total_customers.toLocaleString() },
+              { label: "Open Deals", value: data.open_deals.toLocaleString() },
               { label: "Pipeline Value", value: `$${data.total_pipeline_value.toLocaleString()}` },
               { label: "Win Rate", value: `${data.win_rate}%` },
             ].map(({ label, value }) => (
               <Card key={label} className="rounded-2xl border-[#E8E8EC] bg-white shadow-sm">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-xs font-medium uppercase tracking-wide text-[#7A7A85]">{label}</CardTitle>
+                  <CardTitle className="text-xs font-medium uppercase tracking-wide text-[#7A7A85]">
+                    {label}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-[#0F0F12]">{value}</div>
@@ -170,10 +230,14 @@ export default function DashboardPage() {
                 )}
                 {data.recent_activities.map((a) => (
                   <div key={a.id} className="flex items-start gap-3 rounded-xl border border-[#E8E8EC] p-3">
-                    <Badge className="bg-[#F1EEF8] text-[#7660A8] border-0 text-xs">{a.activity_type}</Badge>
+                    <Badge className="bg-[#F1EEF8] text-[#7660A8] border-0 text-xs">
+                      {a.activity_type}
+                    </Badge>
                     <div className="flex-1 min-w-0">
                       <p className="truncate text-sm text-[#404049]">{a.description}</p>
-                      <p className="text-xs text-[#7A7A85]">{new Date(a.created_at).toLocaleString()}</p>
+                      <p className="text-xs text-[#7A7A85]">
+                        {new Date(a.created_at).toLocaleString()}
+                      </p>
                     </div>
                   </div>
                 ))}
@@ -181,7 +245,7 @@ export default function DashboardPage() {
             </Card>
           </div>
         </>
-      )}
+      ) : null}
     </div>
   );
 }

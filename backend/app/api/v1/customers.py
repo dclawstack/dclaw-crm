@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
@@ -15,9 +16,11 @@ from app.models.customer import Customer
 from app.models.activity import Activity
 from app.services import enrichment_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 VALID_STATUSES = {"lead", "prospect", "active", "inactive", "churned"}
+MAX_IMPORT_BYTES = 5 * 1024 * 1024  # 5 MB — prevents OOM on large uploads
 
 
 @router.get("/", response_model=CustomerListResponse)
@@ -25,6 +28,7 @@ async def list_customers(
     limit: int = Query(20, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),  # was unauthenticated — anyone could list your CRM
 ):
     repo = CustomerRepository(db)
     items, total = await repo.list_all(limit=limit, offset=offset)
@@ -45,11 +49,15 @@ async def create_customer(
     created = await repo.create(customer)
     audit = AuditLogRepository(db)
     await audit.log("customer", str(created.id), "created")
+    logger.info("Customer created: id=%s email=%s", created.id, created.email)
     return created
 
 
 @router.get("/export")
-async def export_customers(db: AsyncSession = Depends(get_db)):
+async def export_customers(
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),  # was unauthenticated — full data dump to anyone
+):
     repo = CustomerRepository(db)
     items, _ = await repo.list_all(limit=10000, offset=0)
     output = io.StringIO()
@@ -71,13 +79,17 @@ async def import_customers(
     db: AsyncSession = Depends(get_db),
     _: object = Depends(get_current_user),
 ):
-    repo = CustomerRepository(db)
-    content = await file.read()
-    reader = csv.DictReader(io.StringIO(content.decode("utf-8")))
-    imported = 0
-    skipped = 0
-    errors: list[str] = []
+    content = await file.read(MAX_IMPORT_BYTES + 1)
+    if len(content) > MAX_IMPORT_BYTES:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 5 MB.")
 
+    from sqlalchemy import select as sa_select
+    reader = csv.DictReader(io.StringIO(content.decode("utf-8")))
+    errors: list[str] = []
+    skipped = 0
+
+    # First pass: validate rows and collect candidate emails
+    valid_rows: list[tuple[int, dict]] = []
     for i, row in enumerate(reader, start=2):
         email = (row.get("email") or "").strip()
         name = (row.get("name") or "").strip()
@@ -85,24 +97,44 @@ async def import_customers(
             errors.append(f"Row {i}: missing name or email")
             skipped += 1
             continue
-        existing = await repo.get_by_email(email)
-        if existing:
+        valid_rows.append((i, row))
+
+    if not valid_rows:
+        return {"imported": 0, "skipped": skipped, "errors": errors}
+
+    # Single query to find all already-existing emails — avoids N per-row lookups
+    candidate_emails = [r[1].get("email", "").strip() for r in valid_rows]
+    existing_result = await db.execute(
+        sa_select(Customer.email).where(Customer.email.in_(candidate_emails))
+    )
+    existing_emails = {row[0] for row in existing_result}
+
+    # Second pass: build objects for insertion
+    to_insert: list[Customer] = []
+    for i, row in valid_rows:
+        email = row.get("email", "").strip()
+        if email in existing_emails:
             errors.append(f"Row {i}: email {email} already exists")
             skipped += 1
             continue
         status = (row.get("status") or "lead").strip()
         if status not in VALID_STATUSES:
             status = "lead"
-        customer = Customer(
-            name=name,
+        to_insert.append(Customer(
+            name=row.get("name", "").strip(),
             email=email,
             phone=(row.get("phone") or "").strip() or None,
             company=(row.get("company") or "").strip() or None,
             status=status,
-        )
-        await repo.create(customer)
-        imported += 1
+        ))
 
+    # Single bulk commit instead of N individual commits
+    if to_insert:
+        db.add_all(to_insert)
+        await db.commit()
+
+    imported = len(to_insert)
+    logger.info("Import complete: imported=%d skipped=%d", imported, skipped)
     return {"imported": imported, "skipped": skipped, "errors": errors}
 
 
@@ -110,6 +142,7 @@ async def import_customers(
 async def get_customer(
     customer_id: UUID,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),  # was unauthenticated
 ):
     repo = CustomerRepository(db)
     customer = await repo.get_by_id(customer_id)
@@ -129,7 +162,11 @@ async def update_customer(
     customer = await repo.get_by_id(customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    update_data = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
+
+    # exclude_unset=True preserves intentional None values (e.g. clearing a phone number)
+    # The previous `if v is not None` filter made it impossible to ever clear optional fields
+    update_data = data.model_dump(exclude_unset=True)
+
     audit = AuditLogRepository(db)
     for field, new_val in update_data.items():
         old_val = str(getattr(customer, field, ""))
@@ -151,6 +188,7 @@ async def delete_customer(
     audit = AuditLogRepository(db)
     await audit.log("customer", str(customer_id), "deleted")
     await repo.delete(customer)
+    logger.info("Customer deleted: id=%s", customer_id)
 
 
 @router.patch("/{customer_id}/status", response_model=CustomerResponse)
@@ -180,7 +218,6 @@ async def update_customer_status(
         description=f"Status changed from {old_status} to {status}",
     )
     await act_repo.create(act)
-
     return updated
 
 

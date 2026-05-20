@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.core.database import get_db
+from app.core.auth import get_current_user
 from app.models.customer import Customer
 from app.models.deal import Deal
 from app.models.activity import Activity
@@ -16,17 +17,12 @@ async def get_dashboard(
     from_date: date | None = Query(None),
     to_date: date | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     total_customers_result = await db.execute(select(func.count()).select_from(Customer))
     total_customers = total_customers_result.scalar() or 0
 
     open_stages = ["prospecting", "qualification", "proposal", "negotiation"]
-
-    deals_query = select(Deal).where(Deal.stage.in_(open_stages))
-    if from_date:
-        deals_query = deals_query.where(Deal.created_at >= from_date)
-    if to_date:
-        deals_query = deals_query.where(Deal.created_at <= to_date)
 
     open_deals_count_q = select(func.count()).select_from(Deal).where(Deal.stage.in_(open_stages))
     pipeline_q = select(func.sum(Deal.value)).select_from(Deal).where(Deal.stage.in_(open_stages))
@@ -59,12 +55,8 @@ async def get_dashboard(
         stage_counts_query = stage_counts_query.where(Deal.created_at <= to_date)
     stage_rows = (await db.execute(stage_counts_query)).all()
     deals_by_stage = {
-        "prospecting": 0,
-        "qualification": 0,
-        "proposal": 0,
-        "negotiation": 0,
-        "closed_won": 0,
-        "closed_lost": 0,
+        "prospecting": 0, "qualification": 0, "proposal": 0,
+        "negotiation": 0, "closed_won": 0, "closed_lost": 0,
     }
     for row in stage_rows:
         if row[0] in deals_by_stage:

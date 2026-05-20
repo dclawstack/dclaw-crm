@@ -22,13 +22,22 @@ class BaseRepository(Generic[T]):
         self.model = model
 
     async def list_all(self, limit: int = 20, offset: int = 0) -> tuple[list[T], int]:
-        result = await self.db.execute(
-            select(self.model).limit(limit).offset(offset)
+        # Single round-trip: window function returns the total alongside each row,
+        # eliminating the separate COUNT(*) query that was previously doubling DB load.
+        stmt = (
+            select(self.model, func.count().over().label("_total"))
+            .limit(limit)
+            .offset(offset)
         )
-        items = list(result.scalars().all())
+        result = await self.db.execute(stmt)
+        rows = result.all()
+
+        if rows:
+            return [row[0] for row in rows], rows[0][1]
+
+        # Page is empty (offset past end or table is empty) — need a real count
         count_result = await self.db.execute(select(func.count()).select_from(self.model))
-        total = count_result.scalar() or 0
-        return items, total
+        return [], count_result.scalar() or 0
 
     async def get_by_id(self, item_id: UUID) -> T | None:
         result = await self.db.execute(

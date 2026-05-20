@@ -9,6 +9,7 @@ from app.api.v1.audit_log import router as audit_log_router
 from app.api.v1.webhooks import router as webhooks_router
 from app.api.v1.forecast import router as forecast_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.sse import router as sse_router
 
 __all__ = [
     "customers_router",
@@ -22,4 +23,5 @@ __all__ = [
     "webhooks_router",
     "forecast_router",
     "auth_router",
+    "sse_router",
 ]

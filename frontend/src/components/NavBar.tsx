@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import GlobalSearch from "@/components/GlobalSearch";
-import { getStoredUser, clearAuth, isAuthenticated } from "@/lib/auth";
-import type { AuthUser } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard" },
@@ -18,28 +16,22 @@ const NAV_ITEMS = [
 
 export default function NavBar() {
   const pathname = usePathname();
-  const router = useRouter();
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const { user, logout } = useAuth();
 
-  useEffect(() => {
-    if (isAuthenticated()) setUser(getStoredUser());
-  }, [pathname]);
+  if (pathname === "/" || pathname === "/login") return null;
 
   const isActive = (href: string) => pathname.startsWith(href);
-
-  if (pathname === "/") return null;
-
-  const handleLogout = () => {
-    clearAuth();
-    router.push("/login");
-  };
 
   return (
     <nav className="sticky top-0 z-40 border-b border-[#E8E8EC] bg-white shadow-[0_2px_6px_rgba(15,15,18,0.06)]">
       <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-3">
-        <Link href="/" className="text-base font-bold text-[#7660A8] hover:text-[#5C4A8E] transition-colors">
+        <Link
+          href="/"
+          className="text-base font-bold text-[#7660A8] hover:text-[#5C4A8E] transition-colors"
+        >
           DClaw CRM
         </Link>
+
         <div className="flex flex-1 items-center gap-1 text-sm">
           {NAV_ITEMS.map(({ href, label }) => (
             <Link
@@ -55,7 +47,9 @@ export default function NavBar() {
             </Link>
           ))}
         </div>
+
         <GlobalSearch />
+
         {user && (
           <div className="flex items-center gap-3 border-l border-[#E8E8EC] pl-4">
             <span className="max-w-[140px] truncate text-xs text-[#7A7A85]">{user.email}</span>
@@ -63,7 +57,7 @@ export default function NavBar() {
               {user.role}
             </span>
             <button
-              onClick={handleLogout}
+              onClick={logout}
               className="rounded-lg px-3 py-1.5 text-sm font-medium text-[#404049] transition-all duration-[240ms] hover:bg-[#FBE9E7] hover:text-[#B3261E]"
             >
               Log out

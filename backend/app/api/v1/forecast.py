@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
+from app.core.auth import get_current_user
 from app.models.deal import Deal
 
 router = APIRouter()
@@ -16,6 +17,7 @@ async def get_forecast(
     from_date: date | None = Query(None),
     to_date: date | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     query = select(Deal).where(Deal.stage.in_(OPEN_STAGES))
 
