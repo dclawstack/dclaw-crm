@@ -137,7 +137,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ### P0 — Must Have (Core Gaps vs. Competitive Baseline)
 
-#### 1. Kanban Pipeline Board
+#### ✅ 1. Kanban Pipeline Board
 
 **Why:** Every competitive CRM (Attio, Twenty, Pipedrive, Relate) leads with a visual pipeline. Table-only deal lists cause reps to lose spatial context of the funnel. YC advisors cite this as the #1 "feel" feature that drives adoption.
 
@@ -161,7 +161,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ---
 
-#### 2. Global Search
+#### ✅ 2. Global Search
 
 **Why:** Without search, users can't navigate a CRM with >50 records. The most-clicked feature in early Attio and Twenty feedback loops.
 
@@ -185,7 +185,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ---
 
-#### 3. Notes on Customers and Deals
+#### ✅ 3. Notes on Customers and Deals
 
 **Why:** First thing reps do after a call is write a note. Without inline notes, reps fall back to Notion/Slack and the CRM becomes a ghost town. Attio and Twenty both treat Notes as a first-class object.
 
@@ -215,7 +215,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ---
 
-#### 4. Activity Completion & Task Queue
+#### ✅ 4. Activity Completion & Task Queue
 
 **Why:** Activities with `scheduled_at` are meaningless without a task view. YC founders rate "what do I need to do today" as the most-used CRM screen after pipeline.
 
@@ -240,7 +240,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ---
 
-#### 5. Customer Status Lifecycle
+#### ✅ 5. Customer Status Lifecycle
 
 **Why:** Binary active/inactive is not enough. Modern CRMs track: `lead → prospect → customer → churned`. This is the basis for funnel analytics.
 
@@ -269,7 +269,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ### P1 — Should Have (Competitive Differentiators)
 
-#### 6. AI Deal Health Score
+#### ✅ 6. AI Deal Health Score
 
 **Why:** Clay, Attio AI attributes, and Clarify all ship this. Score is computed from: days-in-stage, activity recency, deal value vs. avg, probability vs. stage benchmark. No LLM required for v1 — pure heuristic score (0–100) shipped as a backend computed field.
 
@@ -296,7 +296,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ---
 
-#### 7. Audit Log
+#### ✅ 7. Audit Log
 
 **Why:** Required for any SaaS targeting SMBs/enterprise. "Who changed this deal?" is the #1 support request in CRMs. Foundation for compliance (SOC2, GDPR).
 
@@ -322,7 +322,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ---
 
-#### 8. Outbound Webhooks
+#### ✅ 8. Outbound Webhooks
 
 **Why:** Every YC-funded startup integrating a CRM needs webhooks (Zapier, n8n, internal pipelines). Twenty 2.0, Attio, and Clay all ship webhooks as a core primitive. Without them, the CRM becomes a data silo.
 
@@ -352,7 +352,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ---
 
-#### 9. CSV Import / Export
+#### ✅ 9. CSV Import / Export
 
 **Why:** Every CRM migration starts here. Clay, Folk, and Twenty all ship this in v1. Without it, teams stay on spreadsheets.
 
@@ -377,7 +377,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ---
 
-#### 10. Custom Dashboard Date Range Filter
+#### ✅ 10. Custom Dashboard Date Range Filter
 
 **Why:** "Show me last quarter" is the first question every manager asks. Locked-to-all-time dashboards kill adoption with leadership.
 
@@ -398,7 +398,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ---
 
-#### 11. Contacts (People inside Companies)
+#### ✅ 11. Contacts (People inside Companies)
 
 **Why:** Attio and Twenty model this as People + Companies. A single `Customer` conflating both causes pain at scale (multiple contacts per company). This extends the data model without a breaking migration.
 
@@ -427,7 +427,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ### P2 — Could Have (Platform & Intelligence Layer)
 
-#### 12. AI Enrichment — Company Data
+#### ✅ 12. AI Enrichment — Company Data
 
 **Why:** Clay's core value prop. Auto-populate `industry`, `employee_count`, `website`, `description` from company name/domain using a free enrichment source (Clearbit free tier or a self-hosted lookup against LinkedIn/Crunchbase public APIs).
 
@@ -449,7 +449,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ---
 
-#### 13. Multi-User Auth (JWT)
+#### ✅ 13. Multi-User Auth (JWT)
 
 **Why:** Any team use-case requires auth. Foundation for RBAC, audit attribution, and multi-tenancy.
 
@@ -478,7 +478,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ---
 
-#### 14. Role-Based Access Control (RBAC)
+#### ✅ 14. Role-Based Access Control (RBAC)
 
 **Why:** After auth, teams immediately need: admins can delete; members can only create/read. Foundational for enterprise CRM.
 
@@ -496,7 +496,7 @@ When updating `globals.css` `:root` to match DKube brand:
 
 ---
 
-#### 15. Pipeline Revenue Forecast
+#### ✅ 15. Pipeline Revenue Forecast
 
 **Why:** "What will we close this quarter?" — the most-asked sales leadership question. Builds on `probability` + `expected_close_date` already in the data model.
 

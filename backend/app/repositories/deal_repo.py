@@ -12,7 +12,9 @@ class DealRepository(BaseRepository[Deal]):
 
     async def update(self, deal: Deal, **kwargs) -> Deal:
         for key, value in kwargs.items():
-            if value is not None and hasattr(deal, key):
+            if hasattr(deal, key):
+                # Set unconditionally — including None, so callers can clear
+                # optional fields like expected_close_date
                 setattr(deal, key, value)
         await self.db.commit()
         await self.db.refresh(deal)

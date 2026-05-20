@@ -1,20 +1,34 @@
+import csv
+import io
+import logging
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.auth import get_current_user, require_role
 from app.repositories.customer_repo import CustomerRepository
+from app.repositories.activity_repo import ActivityRepository
+from app.repositories.audit_log_repo import AuditLogRepository
 from app.schemas.customer import CustomerCreate, CustomerUpdate, CustomerResponse, CustomerListResponse
 from app.models.customer import Customer
+from app.models.activity import Activity
+from app.services import enrichment_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+VALID_STATUSES = {"lead", "prospect", "active", "inactive", "churned"}
+MAX_IMPORT_BYTES = 5 * 1024 * 1024  # 5 MB — prevents OOM on large uploads
 
 
 @router.get("/", response_model=CustomerListResponse)
 async def list_customers(
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),  # was unauthenticated — anyone could list your CRM
 ):
     repo = CustomerRepository(db)
     items, total = await repo.list_all(limit=limit, offset=offset)
@@ -25,6 +39,7 @@ async def list_customers(
 async def create_customer(
     data: CustomerCreate,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = CustomerRepository(db)
     existing = await repo.get_by_email(data.email)
@@ -32,13 +47,102 @@ async def create_customer(
         raise HTTPException(status_code=409, detail="Email already registered")
     customer = Customer(**data.model_dump())
     created = await repo.create(customer)
+    audit = AuditLogRepository(db)
+    await audit.log("customer", str(created.id), "created")
+    logger.info("Customer created: id=%s email=%s", created.id, created.email)
     return created
+
+
+@router.get("/export")
+async def export_customers(
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),  # was unauthenticated — full data dump to anyone
+):
+    repo = CustomerRepository(db)
+    items, _ = await repo.list_all(limit=10000, offset=0)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["name", "email", "phone", "company", "status"])
+    for c in items:
+        writer.writerow([c.name, c.email, c.phone or "", c.company or "", c.status])
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=customers.csv"},
+    )
+
+
+@router.post("/import")
+async def import_customers(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
+):
+    content = await file.read(MAX_IMPORT_BYTES + 1)
+    if len(content) > MAX_IMPORT_BYTES:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 5 MB.")
+
+    from sqlalchemy import select as sa_select
+    reader = csv.DictReader(io.StringIO(content.decode("utf-8")))
+    errors: list[str] = []
+    skipped = 0
+
+    # First pass: validate rows and collect candidate emails
+    valid_rows: list[tuple[int, dict]] = []
+    for i, row in enumerate(reader, start=2):
+        email = (row.get("email") or "").strip()
+        name = (row.get("name") or "").strip()
+        if not email or not name:
+            errors.append(f"Row {i}: missing name or email")
+            skipped += 1
+            continue
+        valid_rows.append((i, row))
+
+    if not valid_rows:
+        return {"imported": 0, "skipped": skipped, "errors": errors}
+
+    # Single query to find all already-existing emails — avoids N per-row lookups
+    candidate_emails = [r[1].get("email", "").strip() for r in valid_rows]
+    existing_result = await db.execute(
+        sa_select(Customer.email).where(Customer.email.in_(candidate_emails))
+    )
+    existing_emails = {row[0] for row in existing_result}
+
+    # Second pass: build objects for insertion
+    to_insert: list[Customer] = []
+    for i, row in valid_rows:
+        email = row.get("email", "").strip()
+        if email in existing_emails:
+            errors.append(f"Row {i}: email {email} already exists")
+            skipped += 1
+            continue
+        status = (row.get("status") or "lead").strip()
+        if status not in VALID_STATUSES:
+            status = "lead"
+        to_insert.append(Customer(
+            name=row.get("name", "").strip(),
+            email=email,
+            phone=(row.get("phone") or "").strip() or None,
+            company=(row.get("company") or "").strip() or None,
+            status=status,
+        ))
+
+    # Single bulk commit instead of N individual commits
+    if to_insert:
+        db.add_all(to_insert)
+        await db.commit()
+
+    imported = len(to_insert)
+    logger.info("Import complete: imported=%d skipped=%d", imported, skipped)
+    return {"imported": imported, "skipped": skipped, "errors": errors}
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
 async def get_customer(
     customer_id: UUID,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),  # was unauthenticated
 ):
     repo = CustomerRepository(db)
     customer = await repo.get_by_id(customer_id)
@@ -52,12 +156,21 @@ async def update_customer(
     customer_id: UUID,
     data: CustomerUpdate,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
 ):
     repo = CustomerRepository(db)
     customer = await repo.get_by_id(customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    update_data = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
+
+    # exclude_unset=True preserves intentional None values (e.g. clearing a phone number)
+    # The previous `if v is not None` filter made it impossible to ever clear optional fields
+    update_data = data.model_dump(exclude_unset=True)
+
+    audit = AuditLogRepository(db)
+    for field, new_val in update_data.items():
+        old_val = str(getattr(customer, field, ""))
+        await audit.log("customer", str(customer_id), "updated", field, old_val, str(new_val))
     updated = await repo.update(customer, **update_data)
     return updated
 
@@ -66,9 +179,77 @@ async def update_customer(
 async def delete_customer(
     customer_id: UUID,
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role("admin")),
 ):
     repo = CustomerRepository(db)
     customer = await repo.get_by_id(customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+    audit = AuditLogRepository(db)
+    await audit.log("customer", str(customer_id), "deleted")
     await repo.delete(customer)
+    logger.info("Customer deleted: id=%s", customer_id)
+
+
+@router.patch("/{customer_id}/status", response_model=CustomerResponse)
+async def update_customer_status(
+    customer_id: UUID,
+    status: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
+):
+    if status not in VALID_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {VALID_STATUSES}")
+    repo = CustomerRepository(db)
+    customer = await repo.get_by_id(customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    old_status = customer.status
+    updated = await repo.update(customer, status=status)
+
+    audit = AuditLogRepository(db)
+    await audit.log("customer", str(customer_id), "updated", "status", old_status, status)
+
+    act_repo = ActivityRepository(db)
+    act = Activity(
+        customer_id=customer_id,
+        activity_type="status_change",
+        description=f"Status changed from {old_status} to {status}",
+    )
+    await act_repo.create(act)
+    return updated
+
+
+@router.post("/{customer_id}/enrich", status_code=200)
+async def enrich_customer(
+    customer_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
+):
+    repo = CustomerRepository(db)
+    customer = await repo.get_by_id(customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    if not customer.company:
+        raise HTTPException(status_code=400, detail="Customer has no company set")
+
+    result = await enrichment_service.enrich_company(customer.company)
+
+    if result["status"] == "completed" and result.get("data"):
+        data = result["data"]
+        update_data = {k: v for k, v in data.items() if hasattr(customer, k) and v}
+        if update_data:
+            await repo.update(customer, **update_data)
+
+        act_repo = ActivityRepository(db)
+        fields = ", ".join(result["enriched_fields"])
+        act = Activity(
+            customer_id=customer_id,
+            activity_type="enrichment",
+            description=f"Company enriched: {fields}",
+        )
+        await act_repo.create(act)
+
+    return result

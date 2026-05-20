@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends
+from datetime import date
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.core.database import get_db
+from app.core.auth import get_current_user
 from app.models.customer import Customer
 from app.models.deal import Deal
 from app.models.activity import Activity
@@ -11,55 +13,57 @@ router = APIRouter()
 
 
 @router.get("/")
-async def get_dashboard(db: AsyncSession = Depends(get_db)):
+async def get_dashboard(
+    from_date: date | None = Query(None),
+    to_date: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
+):
     total_customers_result = await db.execute(select(func.count()).select_from(Customer))
     total_customers = total_customers_result.scalar() or 0
 
     open_stages = ["prospecting", "qualification", "proposal", "negotiation"]
-    open_deals_result = await db.execute(
-        select(func.count()).select_from(Deal).where(Deal.stage.in_(open_stages))
-    )
-    open_deals = open_deals_result.scalar() or 0
 
-    pipeline_result = await db.execute(
-        select(func.sum(Deal.value)).select_from(Deal).where(Deal.stage.in_(open_stages))
-    )
-    total_pipeline_value = pipeline_result.scalar() or 0.0
+    open_deals_count_q = select(func.count()).select_from(Deal).where(Deal.stage.in_(open_stages))
+    pipeline_q = select(func.sum(Deal.value)).select_from(Deal).where(Deal.stage.in_(open_stages))
+    won_q = select(func.count()).select_from(Deal).where(Deal.stage == "closed_won")
+    lost_q = select(func.count()).select_from(Deal).where(Deal.stage == "closed_lost")
 
-    won_result = await db.execute(
-        select(func.count()).select_from(Deal).where(Deal.stage == "closed_won")
-    )
-    won_count = won_result.scalar() or 0
+    if from_date:
+        open_deals_count_q = open_deals_count_q.where(Deal.created_at >= from_date)
+        pipeline_q = pipeline_q.where(Deal.created_at >= from_date)
+        won_q = won_q.where(Deal.created_at >= from_date)
+        lost_q = lost_q.where(Deal.created_at >= from_date)
+    if to_date:
+        open_deals_count_q = open_deals_count_q.where(Deal.created_at <= to_date)
+        pipeline_q = pipeline_q.where(Deal.created_at <= to_date)
+        won_q = won_q.where(Deal.created_at <= to_date)
+        lost_q = lost_q.where(Deal.created_at <= to_date)
 
-    lost_result = await db.execute(
-        select(func.count()).select_from(Deal).where(Deal.stage == "closed_lost")
-    )
-    lost_count = lost_result.scalar() or 0
+    open_deals = (await db.execute(open_deals_count_q)).scalar() or 0
+    total_pipeline_value = (await db.execute(pipeline_q)).scalar() or 0.0
+    won_count = (await db.execute(won_q)).scalar() or 0
+    lost_count = (await db.execute(lost_q)).scalar() or 0
 
     total_closed = won_count + lost_count
     win_rate = (won_count / total_closed * 100) if total_closed > 0 else 0.0
 
-    stage_counts_result = await db.execute(
-        select(Deal.stage, func.count())
-        .select_from(Deal)
-        .group_by(Deal.stage)
-    )
-    stage_rows = stage_counts_result.all()
+    stage_counts_query = select(Deal.stage, func.count()).select_from(Deal).group_by(Deal.stage)
+    if from_date:
+        stage_counts_query = stage_counts_query.where(Deal.created_at >= from_date)
+    if to_date:
+        stage_counts_query = stage_counts_query.where(Deal.created_at <= to_date)
+    stage_rows = (await db.execute(stage_counts_query)).all()
     deals_by_stage = {
-        "prospecting": 0,
-        "qualification": 0,
-        "proposal": 0,
-        "negotiation": 0,
-        "closed_won": 0,
-        "closed_lost": 0,
+        "prospecting": 0, "qualification": 0, "proposal": 0,
+        "negotiation": 0, "closed_won": 0, "closed_lost": 0,
     }
     for row in stage_rows:
-        deals_by_stage[row[0]] = row[1]
+        if row[0] in deals_by_stage:
+            deals_by_stage[row[0]] = row[1]
 
     recent_activities_result = await db.execute(
-        select(Activity)
-        .order_by(Activity.created_at.desc())
-        .limit(10)
+        select(Activity).order_by(Activity.created_at.desc()).limit(10)
     )
     recent_activities = list(recent_activities_result.scalars().all())
 

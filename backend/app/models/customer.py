@@ -14,7 +14,7 @@ class Customer(Base):
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
     company: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     status: Mapped[str] = mapped_column(
-        Enum("lead", "active", "churned", name="customer_status"),
+        Enum("lead", "prospect", "active", "inactive", "churned", name="customer_status"),
         default="lead",
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
@@ -27,5 +27,8 @@ class Customer(Base):
         back_populates="customer", lazy="selectin", cascade="all, delete-orphan", init=False
     )
     activities: Mapped[list["Activity"]] = relationship(
+        back_populates="customer", lazy="selectin", cascade="all, delete-orphan", init=False
+    )
+    contacts: Mapped[list["Contact"]] = relationship(
         back_populates="customer", lazy="selectin", cascade="all, delete-orphan", init=False
     )

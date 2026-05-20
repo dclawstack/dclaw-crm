@@ -4,26 +4,27 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    /* DKube brand design system tokens */
+    --background: 240 20% 98%;       /* #F8F8FA dk-gray-50 — page bg */
+    --foreground: 240 14% 6%;        /* #0F0F12 dk-ink */
+    --card: 0 0% 100%;               /* #FFFFFF — card surface */
+    --card-foreground: 240 14% 6%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --popover-foreground: 240 14% 6%;
+    --primary: 264 27% 51%;          /* #7660A8 dk-purple-700 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 264 27% 63%;        /* #9384BD dk-purple-500 */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 240 9% 95%;             /* #F2F2F4 dk-gray-100 */
+    --muted-foreground: 240 5% 50%;  /* #7A7A85 dk-gray-500 */
+    --accent: 264 40% 95%;           /* #F1EEF8 dk-purple-100 */
+    --accent-foreground: 264 27% 51%;
+    --destructive: 3 74% 40%;        /* #B3261E dk-danger */
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 8% 92%;            /* #E8E8EC dk-gray-200 */
+    --input: 240 8% 92%;
+    --ring: 264 27% 51%;
+    --radius: 1rem;
   }
 
   * {
@@ -32,5 +33,6 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'Poppins', system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
 }

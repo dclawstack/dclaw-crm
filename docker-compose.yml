@@ -24,6 +24,9 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/dclaw_crm
       APP_ENV: production
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in production}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3006,http://localhost:3000}
+      CLEARBIT_API_KEY: ${CLEARBIT_API_KEY:-}
     ports:
       - "8095:8095"
     depends_on:

@@ -1,6 +1,5 @@
-from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from app.models.customer import Customer
 from app.repositories.base_repo import BaseRepository
@@ -12,7 +11,9 @@ class CustomerRepository(BaseRepository[Customer]):
 
     async def update(self, customer: Customer, **kwargs) -> Customer:
         for key, value in kwargs.items():
-            if value is not None and hasattr(customer, key):
+            if hasattr(customer, key):
+                # Set the value unconditionally — including None, so callers can
+                # explicitly clear optional fields like phone or company
                 setattr(customer, key, value)
         await self.db.commit()
         await self.db.refresh(customer)
